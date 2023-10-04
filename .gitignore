@@ -1,1 +1,11 @@
+# venv stuff
 venv/
+
+# local package install stuff
+PyMVPA/
+pymvpa*/
+
+# misc
+test.py
+data/
+decoding_time_generalization_conditions.py
