@@ -6,6 +6,6 @@ PyMVPA/
 pymvpa*/
 
 # misc
-test.py
 data/
 decoding_time_generalization_conditions.py
+pandasgui_test.py

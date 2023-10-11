@@ -1,3 +1,4 @@
+#%%
 from sklearn.linear_model import LinearRegression, RidgeClassifier, LogisticRegression
 from sklearn.svm import SVC
 import pathlib
@@ -22,7 +23,7 @@ GENERAL_ARGS = {"class_weight":'balanced'}
 
 RAND_STATE = 1
 
-MODELS = {"OLS":    LinearRegression(**GENERAL_ARGS),                                       # Ordinary Least Squares Regression
+MODELS = {"OLS":    LinearRegression(),                                       # Ordinary Least Squares Regression
           "LogRes": LogisticRegression(**GENERAL_ARGS),                                     # Logistic Regression
           "Ridge":  RidgeClassifier(**GENERAL_ARGS),                                        # Ridge Regression / Tikhonov regularisation
           "SVC":    SVC(kernel='linear', random_state=RAND_STATE, **GENERAL_ARGS),          # Linear Support Vector Machine
@@ -32,6 +33,9 @@ MODELS = {"OLS":    LinearRegression(**GENERAL_ARGS),                           
 DECODER_MODEL = MODELS['LogRes']            # choose desired model from the above list
 
 SCORING = 'roc_auc'                         # check scikit-learn docs (links above) for available metrics
+
+N_JOBS = -1                                 # if -1, equal to number of CPU cores
+
 
 
 ############################
@@ -45,6 +49,11 @@ mne.set_log_level('ERROR')
 DATA_PATH = pathlib.Path(DATA_FILE)
 
 df = pd.read_csv(DATA_PATH)
+
+subject_ids = df['Subject'].unique()
+
+
+
 
 #############################
 # ----- MVPA PIPELINE ----- #
@@ -64,5 +73,52 @@ pipeline = make_pipeline(StandardScaler(),
                          DECODER_MODEL)
 
 generalizer = GeneralizingEstimator(pipeline,
-                                    scoring=SCORING)
+                                    scoring=SCORING,
+                                    n_jobs=N_JOBS)
 
+
+
+
+
+
+
+
+from pandas.api.extensions import register_dataframe_accessor
+
+@register_dataframe_accessor('EEG')
+class EEGDataFrame(pd.DataFrame):
+    def __init__(self,
+                 dataframe,
+                 subject_col : str = 'Subject',
+                 ):
+        self._df = dataframe
+
+        self._validate_sub_col(subject_col)
+        self._subject_col = subject_col
+
+        self._ids = self._df[self._subject_col].unique().sort()
+
+    @staticmethod
+    def _validate_sub_col(self, col):
+        """Validate that the DataFrame contains the given Subject column"""
+        if col not in self._df.columns:
+            raise ValueError("DataFrame does not contain subject column")
+
+    @property
+    def subject_col(self,):
+        return self._subject_col
+    
+    def set_subject_col(self, col):
+        if col not in self._df.columns:
+            raise ValueError("DataFrame does not contain subject column")
+        else: self._subject_col = col
+
+    def IsolatedSubject(self, subject_id):
+        """Return dataframe for a single subject"""
+        assert subject_id in self._ids
+        c = self._df[self._subject_col] == subject_id
+        return self._df[c].copy()
+    
+
+
+#%%
