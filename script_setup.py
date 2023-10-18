@@ -2,31 +2,52 @@
 from sklearn.linear_model import LinearRegression, RidgeClassifier, LogisticRegression
 from sklearn.svm import SVC
 import pathlib
+from pprint import pprint
+
+import numpy as np
+
+import mne
+mne.set_log_level('ERROR')
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+
+from mne.decoding import GeneralizingEstimator, cross_val_multiscore 
+
 
 #################################
 # ----- SCRIPT PARAMETERS ----- #
 #################################
 
 # Data-related
-DATA_FILE = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\practice_data\EE_EU_adaptation_ERP_1_Ambi_after_EE_34567_BC.vhdr"
-# DATA_FILE = "path/to/data/file.vhdr"                   # Expects BrainVision format header file (.vhdr extension)
-SAVE_DIRECTORY = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\results"
-# SAVE_DIRECTORY = "path/to/save/directory"              # Directory name, NOT a file 
+DATA_LOC = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\Export from BVA"   # Location of data file(s), may be a single file or a directory containing multiple files.
+SAVE_DIRECTORY = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\results"          # Directory name, NOT a file
+# SAVE_DIRECTORY = "path/to/save/directory"               
 
-# Data import args
+# Data import arguments
 # see https://mne.tools/stable/generated/mne.io.read_raw_brainvision.html#mne.io.read_raw_brainvision
 DATA_ARGS = {'eog' :    ('HEOGL', 'HEOGR', 'VEOGb'),
              'misc' :   'auto',
              'scale' :  1.0}
 
-TARGET_STIM_ONSET_MARKER_NAME = 'Time 0'               # Name or value of marker indicating target stimulus onset
+CONDITION_STIMULI = {'ambi_after_EE': [103, 104, 105, 106, 107],    # 'condition name' : [stimulus markers]
+                     'ambi_after_EU': [203, 204, 205, 206, 207]}
 
 REFERENCE_ELECTRODES = ['M1', 'M2']                    # List of reference electrode names
+EOG_ELECTRODES = ['Up', 'Down', 'Left', 'Right']       # List of EOG electrode names
 BAD_ELECTRODES = []                                    # List electrode names that should be ignored
 # BAD_SUBJECTS = []                                      # List subject IDs that should be ignored
 
 T_MIN = -0.2                                           # Starting time of trials in seconds (if baseline segment should be included, starting time can be negative)
 T_MAX = 1.0                                            # Ending time of trials in seconds
+
+# Resampling parameters (STRONGLY RECOMMENDED)   
+# For resampling approach see https://mne.tools/stable/auto_tutorials/preprocessing/30_filtering_resampling.html#resampling
+RESAMPLE_FREQUENCY = 100                               # Frequency to downsample to. Reduces computational load of decoding procedure.
+RESAMPLE_AT = 'epoch'                                  # At what point should resampling occur? (either 'raw' or 'epoch')
+
+ERP_CHECK_ELECTRODES = ['Fz', 'Cz', 'Pz']                    # Electrodes to plot the ERP, of as a preliminary check, saving it in the indicated directory.
+
 
 # Model selection
 # See https://scikit-learn.org/stable/modules/classes.html#module-sklearn.linear_model
@@ -34,9 +55,9 @@ T_MAX = 1.0                                            # Ending time of trials i
 
 GENERAL_ARGS = {"class_weight":'balanced'}
 
-RAND_STATE = 1
+RAND_STATE = 1              # random state seed
 
-MODELS = {"OLS":    LinearRegression(),                                       # Ordinary Least Squares Regression
+MODELS = {"OLS":    LinearRegression(),                                                     # Ordinary Least Squares Regression
           "LogRes": LogisticRegression(**GENERAL_ARGS),                                     # Logistic Regression
           "Ridge":  RidgeClassifier(**GENERAL_ARGS),                                        # Ridge Regression / Tikhonov regularisation
           "SVC":    SVC(kernel='linear', random_state=RAND_STATE, **GENERAL_ARGS),          # Linear Support Vector Machine
@@ -45,93 +66,126 @@ MODELS = {"OLS":    LinearRegression(),                                       # 
 
 DECODER_MODEL = MODELS['LogRes']            # choose desired model from the above list
 
-SCORING = 'roc_auc'                         # check scikit-learn docs (links above) for available metrics
+CROSS_VAL_FOLDS = 5                         # no. of cross-validation folds to use
 
-N_JOBS = -1                                 # if -1, equal to number of CPU cores
+N_JOBS = -1                                 # no. of jobs to run in parallel. If -1, equal to number of CPU cores
 
+# check the "scoring" parameter here: https://mne.tools/stable/generated/mne.decoding.GeneralizingEstimator.html#mne-decoding-generalizingestimator
+# classification scoring methods: https://scikit-learn.org/stable/modules/model_evaluation.html
+SCORING = 'accuracy'
 
 
 ############################
 # ----- DATA IMPORTS ----- #
 ############################
 
-import mne
-mne.set_log_level('ERROR')
+DATA_PATH = pathlib.Path(DATA_LOC)
+SAVE_DIR = pathlib.Path(SAVE_DIRECTORY)
 
-DATA_PATH = pathlib.Path(DATA_FILE)
+if not SAVE_DIR.exists():
+    raise OSError('Save directory does not exist')
 
-data_raw = mne.io.read_raw_brainvision(DATA_PATH, 
-                                       **DATA_ARGS)
-
-data_raw.load_data()
-data_raw.set_eeg_reference(REFERENCE_ELECTRODES)
-data_raw.info['bads'] = BAD_ELECTRODES
-
-GOOD_CHANNELS = list(set(data_raw.ch_names) - set(REFERENCE_ELECTRODES) - set(BAD_ELECTRODES))
-
-_allowed_channel_types = ['ecg', 'eeg', 'emg', 'eog', 'exci', 
-                          'ias', 'misc', 'resp', 'seeg', 'dbs', 
-                          'stim', 'syst', 'ecog', 'hbo', 'hbr', 
-                          'fnirs_cw_amplitude', 'fnirs_fd_ac_amplitude', 
-                          'fnirs_fd_phase', 'fnirs_od', 'eyetrack_pos', 
-                          'eyetrack_pupil', 'temperature', 'gsr']
-
-try:
-    if len(data_raw.annotations) > 0:
-        events = mne.events_from_annotations(data_raw)
-    else:
-        events = mne.find_events(data_raw)
-except:
-    raise Exception('Unable to segment data (could not find event annotations)')
-
-from pprint import pprint
-print("Found event IDs:")
-pprint(events[1])
-
-marker_present = False
-if isinstance(TARGET_STIM_ONSET_MARKER_NAME, str):
-    for key in events[1].keys():
-        if TARGET_STIM_ONSET_MARKER_NAME in key:
-            marker_present = True
-elif isinstance(TARGET_STIM_ONSET_MARKER_NAME, int):
-    for val in events[1].values():
-        if TARGET_STIM_ONSET_MARKER_NAME == val:
-            marker_present = True
-else:
-    raise ValueError(f"Unrecognised marker value ({TARGET_STIM_ONSET_MARKER_NAME})")
-
-try:
-    assert marker_present
-except:
-    raise ValueError(f"Could not find target stimulus marker in event IDs ({TARGET_STIM_ONSET_MARKER_NAME})")
+# create ERP plotting subdirectory in the data dir
+ERP_SAVE_DIR = SAVE_DIR / "ERP"
+if not ERP_SAVE_DIR.exists():
+    ERP_SAVE_DIR.mkdir()
 
 #%%
-data_epochs = mne.Epochs(data_raw, events[0],
-                         event_id=[val for key, val in events[1].items() if 'Stimulus' in key],
-                         tmin = T_MIN,
-                         tmax = T_MAX)
 
- #%%
+if DATA_PATH.is_file():
+    print(f"Loading file {DATA_PATH.name}")
+    files = [DATA_PATH]
+elif DATA_PATH.is_dir():
+    print(f"Loading files from {DATA_PATH.name}")
+    files = list(DATA_PATH.glob('*after_EE*.vhdr'))
 
+# run Time-Generalised Decoder for each subject individually
+for f in files:
+    data_raw = mne.io.read_raw_brainvision(f, 
+                                           **DATA_ARGS)
 
+    data_raw.load_data()
+    data_raw.set_eeg_reference(REFERENCE_ELECTRODES)
+    data_raw.set_channel_types(dict(zip(EOG_ELECTRODES, ['eog']*4)))
+    data_raw.info['bads'] = BAD_ELECTRODES
 
-#############################
-# ----- MVPA PIPELINE ----- #
-#############################
+    GOOD_CHANNELS = list(set(data_raw.ch_names) - set(REFERENCE_ELECTRODES) - set(EOG_ELECTRODES) - set(BAD_ELECTRODES))
+    
+    if RESAMPLE_AT.lower() == 'raw':
+        data_raw.resample(RESAMPLE_FREQUENCY)
+    elif RESAMPLE_AT.lower() == 'epoch':
+        pass
+    else:
+        raise ValueError('Invalid resampling method parameter')
 
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
+    try:
+        if len(data_raw.annotations) > 0:
+            events = mne.events_from_annotations(data_raw)
+        else:
+            events = mne.find_events(data_raw)
+    except:
+        raise Exception('Unable to segment data (could not find event markers/annotations)')
 
-# from sklearn.cross_validation import StratifiedKFold
+    print("Found event IDs:")
+    pprint(events[1])
 
-#from sklearn.model_selection import cross_val_multiscore # updated
-from mne.decoding import SlidingEstimator, cross_val_multiscore, Scaler, Vectorizer
-from mne.decoding import GeneralizingEstimator
+    # constructing hierarchical condition/stimulus event_ids
+    event_id = {}
+    for event_key, event_val in events[1].items():
+        if 'Stimulus' in event_key:
+            for cond_key, cond_val in CONDITION_STIMULI.items():
+                # if user chose the marker value as indicator
+                if event_val in cond_val:
+                    event_id[cond_key + '/' + str(event_val)] = event_val
+                # if the user chose the marker name as indicator
+                elif event_key in cond_val:
+                    event_id[cond_key + '/' + event_key.replace('/', '_')] = event_val
 
+    data_epochs = mne.Epochs(data_raw, events[0],
+                             event_id=event_id,
+                             tmin = T_MIN,
+                             tmax = T_MAX,
+                             )
 
-pipeline = make_pipeline(StandardScaler(),
-                         DECODER_MODEL)
+    if RESAMPLE_AT.lower() == 'epoch':
+        data_epochs.resample(RESAMPLE_FREQUENCY)
 
-generalizer = GeneralizingEstimator(pipeline,
-                                    scoring=SCORING,
-                                    n_jobs=N_JOBS)
+    # ERP plot as reference check for successful data import/conversion
+    data_epochs.average(picks=ERP_CHECK_ELECTRODES) \
+               .plot() \
+               .savefig(ERP_SAVE_DIR / f.with_suffix('.png').name, dpi=300)
+
+    #############################
+    # ----- MVPA PIPELINE ----- #
+    #############################
+
+    pipeline = make_pipeline(StandardScaler(),
+                            DECODER_MODEL)
+
+    generalizer = GeneralizingEstimator(pipeline,
+                                        scoring=SCORING,
+                                        n_jobs=N_JOBS)
+
+    # TODO: 1 event seems to get dropped here
+    data_matrix = data_epochs.get_data(picks=GOOD_CHANNELS)
+
+    labels = np.empty(shape=(len(data_epochs.events[:,-1])), dtype=object)
+
+    for cond, markers in CONDITION_STIMULI.items():
+        for marker in markers:
+            labels[data_epochs.events[:,-1] == marker] = cond
+
+    #%%
+    # mean scores on folds before fitting
+    scores = cross_val_multiscore(generalizer,
+                                  data_matrix,
+                                  labels,
+                                  cv=CROSS_VAL_FOLDS,
+                                  n_jobs=N_JOBS)#.mean(0)
+
+# 1. scores, pre-fitting
+# 2. train/test split (stratified)
+# 3. fit/predict/score
+
+# 4. statistics?
+# 5. plotting (generalised perfomance matrix, etc.)
