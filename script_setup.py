@@ -1,6 +1,4 @@
 #%%
-from sklearn.linear_model import LinearRegression, RidgeClassifier, LogisticRegression
-from sklearn.svm import SVC
 import pathlib
 from pprint import pprint
 
@@ -9,10 +7,14 @@ import numpy as np
 import mne
 mne.set_log_level('ERROR')
 
+from sklearn.linear_model import LinearRegression, RidgeClassifier, LogisticRegression
+from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
 from mne.decoding import GeneralizingEstimator, cross_val_multiscore 
+
+from plotting import GeneralizationScoreMatrix
 
 
 #################################
@@ -20,7 +22,7 @@ from mne.decoding import GeneralizingEstimator, cross_val_multiscore
 #################################
 
 # Data-related
-DATA_LOC = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\Export from BVA"   # Location of data file(s), may be a single file or a directory containing multiple files.
+DATA_LOC = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\Export from BVA\EE_EU_adaptation_ERP_1_Ambi_after_EE_EU_34567_BC.vhdr"   # Location of data file(s), may be a single file or a directory containing multiple files.
 SAVE_DIRECTORY = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\results"          # Directory name, NOT a file
 # SAVE_DIRECTORY = "path/to/save/directory"               
 
@@ -44,7 +46,7 @@ T_MAX = 1.0                                            # Ending time of trials i
 # Resampling parameters (STRONGLY RECOMMENDED)   
 # For resampling approach see https://mne.tools/stable/auto_tutorials/preprocessing/30_filtering_resampling.html#resampling
 RESAMPLE_FREQUENCY = 100                               # Frequency to downsample to. Reduces computational load of decoding procedure.
-RESAMPLE_AT = 'epoch'                                  # At what point should resampling occur? (either 'raw' or 'epoch')
+RESAMPLE_AT = 'epoch'                                  # At what point should resampling occur? (choose 'raw', 'epoch', or 'do_not_resample')
 
 ERP_CHECK_ELECTRODES = ['Fz', 'Cz', 'Pz']                    # Electrodes to plot the ERP, of as a preliminary check, saving it in the indicated directory.
 
@@ -85,10 +87,14 @@ SAVE_DIR = pathlib.Path(SAVE_DIRECTORY)
 if not SAVE_DIR.exists():
     raise OSError('Save directory does not exist')
 
-# create ERP plotting subdirectory in the data dir
+# create plotting subdirectories in the results dir
 ERP_SAVE_DIR = SAVE_DIR / "ERP"
 if not ERP_SAVE_DIR.exists():
     ERP_SAVE_DIR.mkdir()
+
+GEN_MATRIX_SAVE_DIR = SAVE_DIR / "Temporal Generalization Matrix"
+if not GEN_MATRIX_SAVE_DIR.exists():
+    GEN_MATRIX_SAVE_DIR.mkdir()
 
 #%%
 
@@ -100,9 +106,9 @@ elif DATA_PATH.is_dir():
     files = list(DATA_PATH.glob('*after_EE*.vhdr'))
 
 # run Time-Generalised Decoder for each subject individually
-for f in files:
-    data_raw = mne.io.read_raw_brainvision(f, 
-                                           **DATA_ARGS)
+for i, f in enumerate(files, start=1):
+    print(f"Processing file {i}/{len(files)} : {f.name}")
+    data_raw = mne.io.read_raw_brainvision(f, **DATA_ARGS)
 
     data_raw.load_data()
     data_raw.set_eeg_reference(REFERENCE_ELECTRODES)
@@ -111,13 +117,19 @@ for f in files:
 
     GOOD_CHANNELS = list(set(data_raw.ch_names) - set(REFERENCE_ELECTRODES) - set(EOG_ELECTRODES) - set(BAD_ELECTRODES))
     
+    # resample if selected to do so here
     if RESAMPLE_AT.lower() == 'raw':
+        _t = data_raw.info['sfreq']
         data_raw.resample(RESAMPLE_FREQUENCY)
+        print(f"Succesfully resampled RAW data (was {_t} Hz, is now {data_raw.info['sfreq']})")
     elif RESAMPLE_AT.lower() == 'epoch':
+        pass
+    elif RESAMPLE_AT.lower() == 'do_not_resample':
         pass
     else:
         raise ValueError('Invalid resampling method parameter')
 
+    # get events
     try:
         if len(data_raw.annotations) > 0:
             events = mne.events_from_annotations(data_raw)
@@ -129,7 +141,8 @@ for f in files:
     print("Found event IDs:")
     pprint(events[1])
 
-    # constructing hierarchical condition/stimulus event_ids
+    # constructing hierarchical condition/stimulus event_ids 
+    # (looks more complicated than it is, to get it more user-friendly)
     event_id = {}
     for event_key, event_val in events[1].items():
         if 'Stimulus' in event_key:
@@ -145,10 +158,15 @@ for f in files:
                              event_id=event_id,
                              tmin = T_MIN,
                              tmax = T_MAX,
+                             preload=True
                              )
 
+    # resample if selected to do so here
     if RESAMPLE_AT.lower() == 'epoch':
+        data_epochs.load_data()
+        _t = data_epochs.info['sfreq']
         data_epochs.resample(RESAMPLE_FREQUENCY)
+        print(f"Succesfully resampled EPOCH data (was {_t} Hz, is now {data_raw.info['sfreq']})")
 
     # ERP plot as reference check for successful data import/conversion
     data_epochs.average(picks=ERP_CHECK_ELECTRODES) \
@@ -164,7 +182,8 @@ for f in files:
 
     generalizer = GeneralizingEstimator(pipeline,
                                         scoring=SCORING,
-                                        n_jobs=N_JOBS)
+                                        n_jobs=N_JOBS,
+                                        verbose='INFO')
 
     # TODO: 1 event seems to get dropped here
     data_matrix = data_epochs.get_data(picks=GOOD_CHANNELS)
@@ -175,13 +194,19 @@ for f in files:
         for marker in markers:
             labels[data_epochs.events[:,-1] == marker] = cond
 
-    #%%
-    # mean scores on folds before fitting
+    # run cross validation, take mean score over folds
     scores = cross_val_multiscore(generalizer,
                                   data_matrix,
                                   labels,
                                   cv=CROSS_VAL_FOLDS,
-                                  n_jobs=N_JOBS)#.mean(0)
+                                  n_jobs=N_JOBS).mean(0)
+
+    fig, ax = GeneralizationScoreMatrix(scores_matrix = scores, 
+                                        times_limits = data_epochs.times[[0, -1]],
+                                        score_method = 'accuracy')
+    
+    fig.savefig(GEN_MATRIX_SAVE_DIR / f.with_suffix('.png').name, dpi=450)
+
 
 # 1. scores, pre-fitting
 # 2. train/test split (stratified)
