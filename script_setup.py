@@ -112,7 +112,7 @@ if DATA_PATH.is_file():
     files = [DATA_PATH]
 elif DATA_PATH.is_dir():
     print(f"Loading files from {DATA_PATH}\n")
-    files = list(DATA_PATH.glob('*after_EE*.vhdr'))
+    files = list(DATA_PATH.glob('*.vhdr'))
 
 # run Time-Generalised Decoder for each subject individually
 for i, f in enumerate(files, start=1):
@@ -159,7 +159,7 @@ for i, f in enumerate(files, start=1):
                 # if user chose the marker value as indicator
                 if event_val in cond_val:
                     event_id[cond_key + '/' + str(event_val)] = event_val
-                # if the user chose the marker name as indicator
+                # if user chose the marker name as indicator
                 elif event_key in cond_val:
                     event_id[cond_key + '/' + event_key.replace('/', '_')] = event_val
 
