@@ -1,10 +1,7 @@
 import pathlib
-from pprint import pprint
-
 import numpy as np
 
 import mne
-mne.set_log_level('ERROR')
 
 from sklearn.linear_model import LinearRegression, RidgeClassifier, LogisticRegression
 from sklearn.svm import SVC
@@ -14,6 +11,11 @@ from sklearn.pipeline import make_pipeline
 from mne.decoding import GeneralizingEstimator, cross_val_multiscore 
 
 from plotting import GeneralizationScoreMatrix
+
+# setup logging level for this script
+import logging
+logging.basicConfig(level=logging.INFO)
+mne.set_log_level(logging.ERROR)
 
 # prevent interactive plot windows from opening
 import matplotlib
@@ -72,7 +74,7 @@ GENERAL_ARGS = {"class_weight":'balanced',
 # available methods (DO NOT EDIT THIS LIST)
 MODELS = {"OLS":    LinearRegression(),                                                     # Ordinary Least Squares Regression
           "LogRes": LogisticRegression(solver="liblinear", **GENERAL_ARGS),                 # Logistic Regression
-          "Ridge":  RidgeClassifier(solver="liblinear", **GENERAL_ARGS),                    # Ridge Regression / Tikhonov regularisation
+          "Ridge":  RidgeClassifier(**GENERAL_ARGS),                                        # Ridge Regression / Tikhonov regularisation
           "SVC":    SVC(kernel='linear', random_state=RAND_STATE, **GENERAL_ARGS),          # Linear Support Vector Machine
           "SVM":    SVC(kernel='rbf', random_state=RAND_STATE, **GENERAL_ARGS),             # Non-linear Support Vector Machine
           }
@@ -108,15 +110,15 @@ if not GEN_MATRIX_SAVE_DIR.exists():
     GEN_MATRIX_SAVE_DIR.mkdir()
 
 if DATA_PATH.is_file():
-    print(f"Loading file {DATA_PATH}\n")
+    logging.info(f"Loading file {DATA_PATH}")
     files = [DATA_PATH]
 elif DATA_PATH.is_dir():
-    print(f"Loading files from {DATA_PATH}\n")
+    logging.info(f"Loading files from {DATA_PATH}")
     files = list(DATA_PATH.glob('*.vhdr'))
 
 # run Time-Generalised Decoder for each subject individually
 for i, f in enumerate(files, start=1):
-    print(f"\n\nProcessing file {i}/{len(files)} : {f.name}")
+    logging.info(f"Processing file {i}/{len(files)} : {f.name}")
     data_raw = mne.io.read_raw_brainvision(f, **DATA_ARGS)
 
     data_raw.load_data()
@@ -130,13 +132,15 @@ for i, f in enumerate(files, start=1):
     if RESAMPLE_AT.lower() == 'raw':
         _t = data_raw.info['sfreq']
         data_raw.resample(RESAMPLE_FREQUENCY)
-        print(f"Succesfully resampled RAW data (was {_t} Hz, is now {data_raw.info['sfreq']} Hz)")
+        logging.info(f"Succesfully resampled RAW data (was {_t} Hz, is now {data_raw.info['sfreq']} Hz)")
     elif RESAMPLE_AT.lower() == 'epoch':
         pass
     elif RESAMPLE_AT.lower() == 'do_not_resample':
         pass
     else:
-        raise ValueError(f'Invalid resampling method parameter ({RESAMPLE_AT})')
+        s = f"Invalid resampling method parameter ({RESAMPLE_AT})"
+        logging.critical(s)
+        raise ValueError(s)
 
     # get stimulus events
     try:
@@ -145,10 +149,11 @@ for i, f in enumerate(files, start=1):
         else:
             events = mne.find_events(data_raw)
     except:
-        raise Exception('Unable to segment data (could not find event markers/annotations)')
+        s = "Unable to segment data (could not find event markers/annotations)"
+        logging.critical(s)
+        raise Exception(s)
 
-    print("Found event IDs:")
-    pprint(events[1])
+    logging.info(f"Found event IDs: {events[1]}")
 
     # constructing hierarchical condition/stimulus event_ids 
     # (looks more complicated than it is, in order to get it more user-friendly)
@@ -175,7 +180,7 @@ for i, f in enumerate(files, start=1):
         data_epochs.load_data()
         _t = data_epochs.info['sfreq']
         data_epochs.resample(RESAMPLE_FREQUENCY)
-        print(f"Succesfully resampled EPOCH data (was {_t} Hz, is now {data_epochs.info['sfreq']} Hz)")
+        logging.info(f"Succesfully resampled EPOCH data (was {_t} Hz, is now {data_epochs.info['sfreq']} Hz)")
 
     # ERP plot as reference check for successful data import/conversion
     data_epochs.average(picks=ERP_CHECK_ELECTRODES if len(ERP_CHECK_ELECTRODES) > 0 else None) \
@@ -194,7 +199,7 @@ for i, f in enumerate(files, start=1):
     generalizer = GeneralizingEstimator(pipeline,
                                         scoring=SCORING,
                                         n_jobs=N_JOBS,
-                                        verbose='INFO')
+                                        verbose=logging.root.level)
 
     # TODO: 1 event seems to get dropped here
     data_matrix = data_epochs.get_data(picks=GOOD_CHANNELS)
