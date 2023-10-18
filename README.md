@@ -1,5 +1,11 @@
 # Repository for Speech Adaptation MVPA pipelines
 
+Time-Generalized MVPA (decoding), like in
+-  King, J.-R., & Dehaene, S. (2014). Characterizing the dynamics of mental representations: The temporal generalization method. Trends in Cognitive Sciences, 18(4), 203–210. https://doi.org/10.1016/j.tics.2014.01.002
+- Heikel, E., Sassenhagen, J., & Fiebach, C. J. (2018). Time-generalized multivariate analysis of EEG responses reveals a cascading architecture of semantic mismatch processing. Brain and Language, 184, 43–53. https://doi.org/10.1016/j.bandl.2018.06.007
+
+Written with MNE-Python and scikit-learn. Mainly intended for use with EEG data, could relatively easily be adapted to other data.
+
 ## MVPA data format requirements
 
 See MNE import documentation
