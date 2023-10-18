@@ -33,28 +33,28 @@ filterwarnings("once", category=ConvergenceWarning)
 #################################
 
 # Data-related
-DATA_LOC = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\Export from BVA"   # Location of data file(s), may be a single file or a directory containing multiple files.
+DATA_PATH = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\Export from BVA"  # Location of data file(s), may be a single file or a directory containing multiple files.
 SAVE_DIRECTORY = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\results"          # Directory name, NOT a file
 # SAVE_DIRECTORY = "path/to/save/directory"               
 
 # Data import arguments
 # see https://mne.tools/stable/generated/mne.io.read_raw_brainvision.html#mne.io.read_raw_brainvision
-DATA_ARGS = {'eog' :    ('HEOGL', 'HEOGR', 'VEOGb'),
+DATA_ARGS = {'eog' :    ('Up', 'Down', 'Left', 'Right'),
              'misc' :   'auto',
-             'scale' :  1.0}
+             'scale' :  1.0
+             }
 
 CONDITION_STIMULI = {'ambi_after_EE': [103, 104, 105, 106, 107],    # 'condition name' : [stimulus markers]
                      'ambi_after_EU': [203, 204, 205, 206, 207]}
 
 REFERENCE_ELECTRODES = ['M1', 'M2']                    # List of reference electrode names
-EOG_ELECTRODES = ['Up', 'Down', 'Left', 'Right']       # List of EOG electrode names
 BAD_ELECTRODES = []                                    # List electrode names that should be ignored
 # BAD_SUBJECTS = []                                      # List subject IDs that should be ignored
 
 T_MIN = -0.2                                           # Starting time of trials in seconds (if baseline segment should be included, starting time can be negative)
 T_MAX = 1.0                                            # Ending time of trials in seconds
 
-# Resampling parameters (STRONGLY RECOMMENDED)   
+# Resampling parameters (STRONGLY RECOMMENDED TO RESAMPLE)   
 # For resampling approach see https://mne.tools/stable/auto_tutorials/preprocessing/30_filtering_resampling.html#resampling
 RESAMPLE_FREQUENCY = 100                               # Frequency to downsample to. Reduces computational load of decoding procedure.
 RESAMPLE_AT = 'epoch'                                  # At what point should resampling occur? (choose 'raw', 'epoch', or 'do_not_resample')
@@ -88,13 +88,11 @@ N_JOBS = -1                                 # no. of jobs to run in parallel. If
 # available classification scoring methods: https://scikit-learn.org/stable/modules/model_evaluation.html
 SCORING = 'accuracy'
 
-
-
 ############################
 # ----- DATA IMPORTS ----- #
 ############################
 
-DATA_PATH = pathlib.Path(DATA_LOC)
+DATA_PATH = pathlib.Path(DATA_PATH)
 SAVE_DIR = pathlib.Path(SAVE_DIRECTORY)
 
 if not SAVE_DIR.exists():
@@ -110,24 +108,21 @@ if not GEN_MATRIX_SAVE_DIR.exists():
     GEN_MATRIX_SAVE_DIR.mkdir()
 
 if DATA_PATH.is_file():
-    logging.info(f"Loading file {DATA_PATH}")
     files = [DATA_PATH]
+    logging.info(f"Loading file {DATA_PATH}")
 elif DATA_PATH.is_dir():
-    logging.info(f"Loading files from {DATA_PATH}")
     files = list(DATA_PATH.glob('*.vhdr'))
+    logging.info(f"Loading files from {DATA_PATH} (found {len(files)} files)")
 
-# run Time-Generalised Decoder for each subject individually
+# run Time-Generalised Decoding for each subject individually
 for i, f in enumerate(files, start=1):
     logging.info(f"Processing file {i}/{len(files)} : {f.name}")
     data_raw = mne.io.read_raw_brainvision(f, **DATA_ARGS)
 
     data_raw.load_data()
     data_raw.set_eeg_reference(REFERENCE_ELECTRODES)
-    data_raw.set_channel_types(dict(zip(EOG_ELECTRODES, ['eog']*4)))
     data_raw.info['bads'] = BAD_ELECTRODES
 
-    GOOD_CHANNELS = list(set(data_raw.ch_names) - set(REFERENCE_ELECTRODES) - set(EOG_ELECTRODES) - set(BAD_ELECTRODES))
-    
     # resample if selected to do so here, or check if another valid option was given.
     if RESAMPLE_AT.lower() == 'raw':
         _t = data_raw.info['sfreq']
@@ -202,7 +197,7 @@ for i, f in enumerate(files, start=1):
                                         verbose=logging.root.level)
 
     # TODO: 1 event seems to get dropped here
-    data_matrix = data_epochs.get_data(picks=GOOD_CHANNELS)
+    data_matrix = data_epochs.get_data(picks='data') # pick only good EEG channels
 
     # produce labels based on user-indicated condition/marker mapping
     labels = np.empty(shape=(len(data_epochs.events[:,-1])), dtype=object)
