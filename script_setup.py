@@ -64,26 +64,26 @@ ERP_CHECK_ELECTRODES = ['Fz', 'Cz', 'Pz']              # Electrodes to plot the 
 # See https://scikit-learn.org/stable/modules/classes.html#module-sklearn.linear_model
 # or  https://scikit-learn.org/stable/modules/classes.html#module-sklearn.svm
 
+RAND_STATE = 1              # random state seed
+
 GENERAL_ARGS = {"class_weight":'balanced',
                 }
 
-RAND_STATE = 1              # random state seed
-
+# available methods (DO NOT EDIT THIS LIST)
 MODELS = {"OLS":    LinearRegression(),                                                     # Ordinary Least Squares Regression
-          "LogRes": LogisticRegression(solver="liblinear", **GENERAL_ARGS),                                     # Logistic Regression
-          "Ridge":  RidgeClassifier(solver="liblinear", **GENERAL_ARGS),                                        # Ridge Regression / Tikhonov regularisation
+          "LogRes": LogisticRegression(solver="liblinear", **GENERAL_ARGS),                 # Logistic Regression
+          "Ridge":  RidgeClassifier(solver="liblinear", **GENERAL_ARGS),                    # Ridge Regression / Tikhonov regularisation
           "SVC":    SVC(kernel='linear', random_state=RAND_STATE, **GENERAL_ARGS),          # Linear Support Vector Machine
           "SVM":    SVC(kernel='rbf', random_state=RAND_STATE, **GENERAL_ARGS),             # Non-linear Support Vector Machine
           }
 
-DECODER_MODEL = MODELS['LogRes']            # choose desired model from the above list
+DECODER_MODEL = MODELS['Ridge']            # choose desired model from the above list
 
 CROSS_VAL_FOLDS = 5                         # no. of cross-validation folds to use
 
 N_JOBS = -1                                 # no. of jobs to run in parallel. If -1, equal to number of CPU cores
 
-# check the "scoring" parameter here: https://mne.tools/stable/generated/mne.decoding.GeneralizingEstimator.html#mne-decoding-generalizingestimator
-# classification scoring methods: https://scikit-learn.org/stable/modules/model_evaluation.html
+# available classification scoring methods: https://scikit-learn.org/stable/modules/model_evaluation.html
 SCORING = 'accuracy'
 
 
