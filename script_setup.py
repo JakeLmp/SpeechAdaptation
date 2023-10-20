@@ -1,3 +1,4 @@
+#%%
 import pathlib
 import numpy as np
 
@@ -33,9 +34,8 @@ filterwarnings("once", category=ConvergenceWarning)
 #################################
 
 # Data-related
-DATA_PATH = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\Export from BVA"  # Location of data file(s), may be a single file or a directory containing multiple files.
+DATA_PATH = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\practice_data"  # Location of data file(s), may be a single file or a directory containing multiple files.
 SAVE_DIRECTORY = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\results"          # Directory name, NOT a file
-# SAVE_DIRECTORY = "path/to/save/directory"               
 
 # Data import arguments
 # see https://mne.tools/stable/generated/mne.io.read_raw_brainvision.html#mne.io.read_raw_brainvision
@@ -49,7 +49,7 @@ CONDITION_STIMULI = {'ambi_after_EE': [103, 104, 105, 106, 107],    # 'condition
 
 REFERENCE_ELECTRODES = ['M1', 'M2']                    # List of reference electrode names
 BAD_ELECTRODES = []                                    # List electrode names that should be ignored
-# BAD_SUBJECTS = []                                      # List subject IDs that should be ignored
+# BAD_SUBJECTS = []                                      # NOT IMPLEMENTED : List subject IDs that should be ignored
 
 T_MIN = -0.2                                           # Starting time of trials in seconds (if baseline segment should be included, starting time can be negative)
 T_MAX = 1.0                                            # Ending time of trials in seconds
@@ -88,6 +88,8 @@ N_JOBS = -1                                 # no. of jobs to run in parallel. If
 # available classification scoring methods: https://scikit-learn.org/stable/modules/model_evaluation.html
 SCORING = 'accuracy'
 
+
+
 ############################
 # ----- DATA IMPORTS ----- #
 ############################
@@ -98,14 +100,25 @@ SAVE_DIR = pathlib.Path(SAVE_DIRECTORY)
 if not SAVE_DIR.exists():
     raise OSError('Save directory does not exist')
 
-# create plotting subdirectories in the results dir
-ERP_SAVE_DIR = SAVE_DIR / "ERP"
-if not ERP_SAVE_DIR.exists():
-    ERP_SAVE_DIR.mkdir()
+# create subdirectories in the results dir
+SAVE_DIR_ERP = SAVE_DIR / "ERP"
+if not SAVE_DIR_ERP.exists():
+    SAVE_DIR_ERP.mkdir()
 
-GEN_MATRIX_SAVE_DIR = SAVE_DIR / "Temporal Generalization Matrix"
-if not GEN_MATRIX_SAVE_DIR.exists():
-    GEN_MATRIX_SAVE_DIR.mkdir()
+SAVE_DIR_GEN_MATRIX = SAVE_DIR / "Temporal Generalization Matrix"
+if not SAVE_DIR_GEN_MATRIX.exists():
+    SAVE_DIR_GEN_MATRIX.mkdir()
+
+# TODO: rewrite this into context manager for graceful exception handling
+# tmp results directory will hold intermediate results, as back up for between-subject script crashes
+SAVE_DIR_TMP = SAVE_DIR / "tmp"
+if not SAVE_DIR_TMP.exists():
+    SAVE_DIR_TMP.mkdir()
+else:
+    # remove existing files from directory
+    for _f in SAVE_DIR_TMP.glob('*'): # FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
+        if _f.is_file(): _f.unlink()
+        else: raise Exception(f"Please do not alter contents of {SAVE_DIR_TMP}")
 
 if DATA_PATH.is_file():
     files = [DATA_PATH]
@@ -154,14 +167,13 @@ for i, f in enumerate(files, start=1):
     # (looks more complicated than it is, in order to get it more user-friendly)
     event_id = {}
     for event_key, event_val in events[1].items():
-        if 'Stimulus' in event_key:
-            for cond_key, cond_val in CONDITION_STIMULI.items():
-                # if user chose the marker value as indicator
-                if event_val in cond_val:
-                    event_id[cond_key + '/' + str(event_val)] = event_val
-                # if user chose the marker name as indicator
-                elif event_key in cond_val:
-                    event_id[cond_key + '/' + event_key.replace('/', '_')] = event_val
+        for cond_key, cond_val in CONDITION_STIMULI.items():
+            # if user chose the marker value as indicator
+            if event_val in cond_val:
+                event_id[cond_key + '/' + str(event_val)] = event_val
+            # if user chose the marker name as indicator
+            elif event_key in cond_val:
+                event_id[cond_key + '/' + event_key.replace('/', '_')] = event_val
 
     data_epochs = mne.Epochs(data_raw, events[0],
                              event_id=event_id,
@@ -180,7 +192,7 @@ for i, f in enumerate(files, start=1):
     # ERP plot as reference check for successful data import/conversion
     data_epochs.average(picks=ERP_CHECK_ELECTRODES if len(ERP_CHECK_ELECTRODES) > 0 else None) \
                .plot() \
-               .savefig(ERP_SAVE_DIR / f.with_suffix('.png').name, dpi=300)
+               .savefig(SAVE_DIR_ERP / f.with_suffix('.png').name, dpi=300)
 
 
 
@@ -189,12 +201,14 @@ for i, f in enumerate(files, start=1):
     ####################
 
     pipeline = make_pipeline(StandardScaler(),
-                            DECODER_MODEL)
+                             DECODER_MODEL)
 
     generalizer = GeneralizingEstimator(pipeline,
                                         scoring=SCORING,
                                         n_jobs=N_JOBS,
                                         verbose=logging.root.level)
+
+    # TODO: balanced no. of trials across conditions
 
     # TODO: 1 event seems to get dropped here
     data_matrix = data_epochs.get_data(picks='data') # pick only good EEG channels
@@ -205,18 +219,41 @@ for i, f in enumerate(files, start=1):
         for marker in markers:
             labels[data_epochs.events[:,-1] == marker] = cond
 
-    # run cross validation, take mean score over folds
+    # run fitting/cross validation
+    logging.info("Performing fitting/cross-validation")
     scores = cross_val_multiscore(generalizer,
                                   data_matrix,
                                   labels,
                                   cv=CROSS_VAL_FOLDS,
                                   n_jobs=N_JOBS
-                                  ) \
-                                    .mean(0)
+                                  )
+
+    # store results in temp folder, to be imported later
+    with open(SAVE_DIR_TMP / f.with_suffix('.npy').name, 'wb') as tmp:
+        # scores.tofile(tmp)
+        np.save(tmp, scores)
+        logging.info(f"Wrote cross validation scores to {tmp.name}")
+
+    # take mean score over folds
+    mean_scores = scores.mean(0)
 
     # plot the scoring matrix of this subject
-    fig, ax = GeneralizationScoreMatrix(scores_matrix = scores, 
+    fig, ax = GeneralizationScoreMatrix(scores_matrix = mean_scores, 
                                         times_limits = data_epochs.times[[0, -1]],
                                         score_method = 'accuracy')
     
-    fig.savefig(GEN_MATRIX_SAVE_DIR / f.with_suffix('.png').name, dpi=450)
+    fig.savefig(SAVE_DIR_GEN_MATRIX / f.with_suffix('.png').name, dpi=450)
+
+#%%
+
+# read scores from tmp files, preserving file names in dict keys
+tmp_results = {}
+for f in SAVE_DIR_TMP.glob('*.npy'):
+    print(f"Unpacking {f.name}")
+    with open(f, 'rb') as tmp:
+        tmp_results[f.stem] = np.load(tmp)
+
+# aggregate into numpy array, with axes (subject, fold, n_times, n_times)
+agg_results = np.empty(shape=(len(tmp_results, *tmp_results[0].shape)))    
+for i, (key, val) in enumerate(tmp_results.items()):
+    agg_results[i] = val
