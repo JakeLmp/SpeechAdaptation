@@ -24,3 +24,13 @@ Data contained in each file:
 - *All* conditions in one file, with corresponding stimulus markers
 - Optionally downsampled (e.g. 100 Hz) to compensate for high computational load of MVPA
   - Script also contains an option to do this.
+
+## How to run
+
+First, open the module's ```PARAMETERS.py``` file, edit the parameter values to your liking, and *save the file*. Then, run the following command in the terminal:
+
+```unix
+python -m MVPA
+```
+
+Inspect the ERP plots to see if data preprocessing was performed correctly, and wait for the analysis to complete. Results are stored in (subdirectories of) the user-specified directory. 
