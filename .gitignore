@@ -1,15 +1,10 @@
 # venv stuff
 venv/
 
-# local package install stuff
-PyMVPA/
-pymvpa*/
-
 # cache
 __pycache__/
 
 # misc
 data/
 results/
-decoding_time_generalization_conditions.py
-pandasgui_test.py
+reference_code/
