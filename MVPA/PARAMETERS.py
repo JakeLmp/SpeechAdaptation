@@ -9,7 +9,7 @@ from sklearn.svm import SVC
 ######################################
 
 # Data-related
-DATA_PATH = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\Export from BVA"  # Location of data file(s), may be a single file or a directory containing multiple files.
+DATA_PATH = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\practice_data"  # Location of data file(s), may be a single file or a directory containing multiple files.
 SAVE_DIRECTORY = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\results"          # Directory name, NOT a file
 
 # Data import arguments

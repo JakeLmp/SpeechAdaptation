@@ -12,8 +12,6 @@ from sklearn.pipeline import make_pipeline
 
 from mne.decoding import GeneralizingEstimator, cross_val_multiscore 
 
-from .plotting import GeneralizationScoreMatrix
-
 # prevent commandline output from getting cluttered by repetitive warnings
 from warnings import filterwarnings
 from sklearn.exceptions import ConvergenceWarning
@@ -56,7 +54,6 @@ def GAT_main():
                                             scoring=SCORING,
                                             n_jobs=N_JOBS,
                                             verbose=logger.level)
-        logger.handlers[0].flush()
 
         # TODO: balanced no. of trials across conditions
 
