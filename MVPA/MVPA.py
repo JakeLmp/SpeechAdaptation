@@ -101,8 +101,9 @@ class MVPA_manager:
     def preprocess_all(self, rm_existing=True):
         # remove existing epoch files from tmp directory
         if rm_existing:
-            for subject in self.subjects:
-                if subject.epoch.is_file(): subject.epoch.unlink()
+            # remove existing epoch files from directory
+            for f_ in SAVE_DIR_TMP.glob('*-epo.fif'): # FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
+                if f_.is_file(): f_.unlink()
                 else: raise Exception(f"Please do not alter contents of {SAVE_DIR_TMP}")
 
         # run preprocessing for all raw files
@@ -177,10 +178,11 @@ class MVPA_manager:
         logger.info(f"Stored aggregated GAT results at {f}")
 
     def run_all_gat(self, rm_existing=True, aggregate_results=True):
-        # remove existing GAT performance matrix files from directory
+        # remove existing GAT files from tmp directory
         if rm_existing:
-            for subject in self.subjects:
-                if subject.gat.is_file(): subject.gat.unlink()
+            # remove existing GAT files from directory
+            for f_ in SAVE_DIR_TMP.glob('*-gat.npy'): # FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
+                if f_.is_file(): f_.unlink()
                 else: raise Exception(f"Please do not alter contents of {SAVE_DIR_TMP}")
         
         # run Generalized Across Time (GAT) Decoding for each subject individually
