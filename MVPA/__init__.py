@@ -6,11 +6,9 @@ logger.addHandler(logging.StreamHandler(stream=sys.stdout))
 from matplotlib.pyplot import set_loglevel;     set_loglevel('error')
 from mne import set_log_level;                  set_log_level(logging.ERROR)
 
-from .preprocessing import preprocessing_main
-from .GAT import GAT_main
-from .plotting import plotting_main
+from .MVPA import MVPA_manager
 
 def main():
-    preprocessing_main()
-    GAT_main()
-    plotting_main()
+    mvpa_manager = MVPA_manager()
+    mvpa_manager.preprocess_all()
+    mvpa_manager.run_all_gat()
