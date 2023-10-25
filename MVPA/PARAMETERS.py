@@ -9,7 +9,7 @@ from sklearn.svm import SVC
 ######################################
 
 # Data-related
-DATA_PATH = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\practice_data"  # Location of data file(s), may be a single file or a directory containing multiple files.
+DATA_PATH = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\Export from BVA"  # Location of data file(s), may be a single file or a directory containing multiple files.
 SAVE_DIRECTORY = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\results"          # Directory name, NOT a file
 
 # Data import arguments
@@ -88,8 +88,8 @@ for d in _subdirs:
         SAVE_DIRS_DICT[d].mkdir()
 
 
-# TODO: rewrite this into context manager for graceful exception handling
-# tmp results directory will hold intermediate results, as back up for between-subject script crashes
-SAVE_DIR_TMP = SAVE_DIR / "tmp"
+# TODO: rewrite this for graceful exception handling (use intermediate files only in case of error)
+# .tmp results directory will hold intermediate results
+SAVE_DIR_TMP = SAVE_DIR / ".tmp"
 if not SAVE_DIR_TMP.exists():
-    SAVE_DIR_TMP.mkdir()
+    SAVE_DIR_TMP.mkdir(mode=0o700)

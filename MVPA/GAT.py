@@ -87,7 +87,7 @@ def GAT_main():
     for f in SAVE_DIR_TMP.glob('*' + '-gat.npy'):
         logger.debug(f"Unpacking {f.name}")
         with open(f, 'rb') as tmp:
-            tmp_results[f.stem] = np.load(tmp)
+            tmp_results[f.stem[:-len('-gat')]] = np.load(tmp)
 
     # pickle results for (optional) later use
     import pickle
