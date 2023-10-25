@@ -100,4 +100,3 @@ def GAT_main():
 
 if __name__ == ' __main__':
     print('THIS SCRIPT IS NOT MEANT TO BE RUN INDEPENDENTLY')
-    GAT_main()
