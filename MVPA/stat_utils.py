@@ -94,3 +94,38 @@ def get_p_scores(scores, chance = .5, tfce=False):
     """
     p_values = (parallel_stats(scores - chance) if tfce==False else stats_tfce(scores - chance))
     return p_values
+
+
+def _grouper(iterable):
+    """
+    List of time points of significance, identifies neighbouring time points
+    """
+    prev = None
+    group = []
+    for item in iterable:
+        if not prev or round(item - prev, 2) <= .01:
+            group.append(item)
+        else:
+            yield group
+            group = [item]
+        prev = item
+    if group:
+        yield group
+        
+def find_clus(sig_times):
+    """
+    Identify time points of significance from FDR correction, results in lists of ranges and individual 
+        time points of significance. Creates a dictionary for later use.
+    
+    Parameters
+    ----------
+    sig_times: list
+        List of significant time points
+    """
+    group = dict(enumerate(_grouper(sig_times)))
+    clus = []
+    for key in group.keys():   
+        ls = group[key]
+        clus.append((([ls[0], ls[-1]] if round((ls[1]-ls[0]), 2)<=0.01 else [ls[1], ls[-1]]) 
+                     if len(group[key])>1 else group[key]))
+    return clus
