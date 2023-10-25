@@ -1,0 +1,66 @@
+[DEFAULT]
+
+
+[PATHS]
+# location of data file(s), may be a single file or a directory containing multiple files
+DATA = "C:\\Users\\Jakob\\Documents\\repositories\\SpeechAdaptation\\data\\Export from BVA"
+
+# directory where results should be stored (directory, NOT a file)
+SAVE = "C:\\Users\\Jakob\\Documents\\repositories\\SpeechAdaptation\\results"
+
+[CONDITION_STIMULI]
+# add one line for each condition in the following format:
+# condition_name = [stimulus markers]
+ambi_after_EE = [103, 104, 105, 106, 107]    
+ambi_after_EU = [203, 204, 205, 206, 207]
+
+[MNE]
+# MNE data import arguments
+# see https://mne.tools/stable/generated/mne.io.read_raw_brainvision.html#mne.io.read_raw_brainvision
+IMPORT_ARGS = { eog = ['Up', 'Down', 'Left', 'Right'], misc = 'auto', scale = 1.0 }
+
+# List of reference electrode names
+ELECTRODES.REFERENCE = ['M1', 'M2']
+
+# List electrode names that should be ignored
+ELECTRODES.BAD = []
+
+# Electrodes to plot the ERP of, as a preliminary check. 
+# Leave empty to plot all channels.
+ELECTRODES.ERP_CHECK = ['Fz', 'Cz', 'Pz']
+
+
+# Starting/ending times of trials in seconds 
+# (if baseline segment should be included, starting time can be negative)
+T_MIN = -0.2
+T_MAX = 1.0
+
+# Resampling parameters (STRONGLY RECOMMENDED TO RESAMPLE)   
+# For resampling approach see https://mne.tools/stable/auto_tutorials/preprocessing/30_filtering_resampling.html#resampling
+# Frequency to downsample to. Reduces computational load of decoding procedure.
+RESAMPLE.FREQUENCY = 100
+
+# At what point should resampling occur? (choose 'raw', 'epoch', or 'do_not_resample')
+RESAMPLE.METHOD = 'epoch'
+
+[DECODING]
+# See https://scikit-learn.org/stable/modules/classes.html#module-sklearn.linear_model
+# or  https://scikit-learn.org/stable/modules/classes.html#module-sklearn.svm
+
+# random state seed
+RAND_STATE = 1
+
+MODEL_ARGS = { class_weight = 'balanced' }
+
+# Available methods: OLS, LogRes, Ridge, SVC, SVM
+MODEL = 'LogRes'
+
+# available classification scoring methods: 
+# https://scikit-learn.org/stable/modules/model_evaluation.html
+SCORING = 'accuracy'
+
+# no. of cross-validation folds to use
+CROSS_VAL_FOLDS = 5
+
+# no. of jobs to run in parallel. If -1, equal to number of CPU cores
+N_JOBS = -1
