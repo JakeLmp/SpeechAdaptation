@@ -9,7 +9,7 @@ from sklearn.svm import SVC
 ######################################
 
 # Data-related
-DATA_PATH = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\practice_data"  # Location of data file(s), may be a single file or a directory containing multiple files.
+DATA_PATH = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\data\Export from BVA"  # Location of data file(s), may be a single file or a directory containing multiple files.
 SAVE_DIRECTORY = r"C:\Users\Jakob\Documents\repositories\SpeechAdaptation\results"          # Directory name, NOT a file
 
 # Data import arguments
@@ -66,9 +66,9 @@ SCORING = 'accuracy'
 
 
 
-##############################
-# ----- IO DEFINITIONS ----- #
-##############################
+#######################################################
+# ----- IO DEFINITIONS - DO NOT EDIT CODE BELOW ----- #
+#######################################################
 
 DATA_PATH = pathlib.Path(DATA_PATH)
 SAVE_DIR = pathlib.Path(SAVE_DIRECTORY)
@@ -77,13 +77,16 @@ if not SAVE_DIR.exists():
     raise OSError('Save directory does not exist')
 
 # create subdirectories in the results dir
-SAVE_DIR_ERP = SAVE_DIR / "ERP"
-if not SAVE_DIR_ERP.exists():
-    SAVE_DIR_ERP.mkdir()
+_subdirs = ["ERP",
+            "Temporal Generalization Matrix"]
 
-SAVE_DIR_GEN_MATRIX = SAVE_DIR / "Temporal Generalization Matrix"
-if not SAVE_DIR_GEN_MATRIX.exists():
-    SAVE_DIR_GEN_MATRIX.mkdir()
+SAVE_DIRS_DICT = {}
+
+for d in _subdirs:
+    SAVE_DIRS_DICT[d] = SAVE_DIR / d
+    if not SAVE_DIRS_DICT[d].exists():
+        SAVE_DIRS_DICT[d].mkdir()
+
 
 # TODO: rewrite this into context manager for graceful exception handling
 # tmp results directory will hold intermediate results, as back up for between-subject script crashes

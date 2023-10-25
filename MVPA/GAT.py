@@ -22,106 +22,85 @@ filterwarnings("once", category=ConvergenceWarning)
 # this is where all user-defined parameters (constants) are located
 from .PARAMETERS import *
 
-# file extension produced in tmp folder
-FILE_EXT = '-gat.npy'
-
 
 
 ####################
 # ----- MVPA ----- #
 ####################
 
-# remove existing epoch files from directory
-for _f in SAVE_DIR_TMP.glob('*.npy'): # FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
-    if _f.is_file(): _f.unlink()
-    else: raise Exception(f"Please do not alter contents of {SAVE_DIR_TMP}")
+def GAT_main():
+    # remove existing performance matrix files from directory
+    for _f in SAVE_DIR_TMP.glob('*.npy'): # FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
+        if _f.is_file(): _f.unlink()
+        else: raise Exception(f"Please do not alter contents of {SAVE_DIR_TMP}")
 
-if DATA_PATH.is_file():
-    files = [DATA_PATH]
-    logger.info(f"Loading file {DATA_PATH}")
-elif DATA_PATH.is_dir():
-    files = list(DATA_PATH.glob('*.vhdr'))
-    logger.info(f"Loading files from {DATA_PATH} (found {len(files)} files)")
+    if DATA_PATH.is_file():
+        files = [DATA_PATH]
+        logger.info(f"Loading file {DATA_PATH}")
+    elif DATA_PATH.is_dir():
+        files = list(DATA_PATH.glob('*.vhdr'))
+        logger.info(f"Loading files from {DATA_PATH} (found {len(files)} files)")
 
-files = list(SAVE_DIR_TMP.glob('*-epo.fif'))
+    files = list(SAVE_DIR_TMP.glob('*-epo.fif'))
 
-# run Time-Generalised Decoding for each subject individually
-for i, f in enumerate(files, start=1):
-    logger.info(f"Performing Generalization Across Time MVPA for file {i}/{len(files)} : {f.name}")
+    # run Time-Generalised Decoding for each subject individually
+    for i, f in enumerate(files, start=1):
+        logger.info(f"Performing Generalization Across Time MVPA for file {i}/{len(files)} : {f.name}")
 
-    data_epochs = mne.read_epochs(f)
+        data_epochs = mne.read_epochs(f)
 
-    pipeline = make_pipeline(StandardScaler(),
-                             DECODER_MODEL)
+        pipeline = make_pipeline(StandardScaler(),
+                                DECODER_MODEL)
 
-    generalizer = GeneralizingEstimator(pipeline,
-                                        scoring=SCORING,
-                                        n_jobs=N_JOBS,
-                                        verbose=logger.root.level)
+        generalizer = GeneralizingEstimator(pipeline,
+                                            scoring=SCORING,
+                                            n_jobs=N_JOBS,
+                                            verbose=logger.level)
+        logger.handlers[0].flush()
 
-    # TODO: balanced no. of trials across conditions
+        # TODO: balanced no. of trials across conditions
 
-    # TODO: 1 event seems to get dropped here
-    data_matrix = data_epochs.get_data(picks='data') # pick only good EEG channels
+        # TODO: 1 event seems to get dropped here
+        data_matrix = data_epochs.get_data(picks='data') # pick only good EEG channels
 
-    # produce labels based on user-indicated condition/marker mapping
-    labels = np.empty(shape=(len(data_epochs.events[:,-1])), dtype=object)
-    for cond, markers in CONDITION_STIMULI.items():
-        for marker in markers:
-            labels[data_epochs.events[:,-1] == marker] = cond
+        # produce labels based on user-indicated condition/marker mapping
+        labels = np.empty(shape=(len(data_epochs.events[:,-1])), dtype=object)
+        for cond, markers in CONDITION_STIMULI.items():
+            for marker in markers:
+                labels[data_epochs.events[:,-1] == marker] = cond
 
-    # run fitting/cross validation
-    logger.info("Performing fitting and cross-validation")
-    scores = cross_val_multiscore(generalizer,
-                                  data_matrix,
-                                  labels,
-                                  cv=CROSS_VAL_FOLDS,
-                                  n_jobs=N_JOBS
-                                  )
+        # run fitting/cross validation
+        logger.info("Performing fitting and cross-validation")
+        scores = cross_val_multiscore(generalizer,
+                                    data_matrix,
+                                    labels,
+                                    cv=CROSS_VAL_FOLDS,
+                                    n_jobs=N_JOBS
+                                    )
 
-    # store results in temp folder, to be imported later
-    with open(SAVE_DIR_TMP / (f.stem + FILE_EXT), 'wb') as tmp:
-        np.save(tmp, scores)
-        logger.info(f"Wrote cross validation scores to {tmp.name}")
+        # store results in temp folder, to be imported later
+        with open(SAVE_DIR_TMP / (f.stem[:-len('-epo')] + '-gat.npy'), 'wb') as tmp:
+            np.save(tmp, scores)
+            logger.info(f"Wrote cross validation scores to {tmp.name}")
 
-    # take mean score over folds
-    mean_scores = scores.mean(0)
 
-    # plot the scoring matrix of this subject
-    fig, ax = GeneralizationScoreMatrix(scores_matrix = mean_scores, 
-                                        times_limits = (T_MIN, T_MAX),
-                                        score_method = 'accuracy')
-    
-    fig.savefig(SAVE_DIR_GEN_MATRIX / f.with_suffix('.png').name, dpi=450)
+    # read scores from tmp files, preserving file names in dict keys
+    logger.info("Consolidating GAT results")
+    tmp_results = {}
+    for f in SAVE_DIR_TMP.glob('*' + '-gat.npy'):
+        logger.debug(f"Unpacking {f.name}")
+        with open(f, 'rb') as tmp:
+            tmp_results[f.stem] = np.load(tmp)
 
-# read scores from tmp files, preserving file names in dict keys
-logger.info("Calculating average GAT results")
-tmp_results = {}
-for f in SAVE_DIR_TMP.glob('*' + FILE_EXT):
-    logger.debug(f"Unpacking {f.name}")
-    with open(f, 'rb') as tmp:
-        tmp_results[f.stem] = np.load(tmp)
+    # pickle results for (optional) later use
+    import pickle
+    _f = SAVE_DIR / 'GAT_results.pickle'
+    with open(_f, 'wb') as f:
+        pickle.dump(tmp_results, f)
 
-# pickle results for (optional) later use
-import pickle
-_f = SAVE_DIR / 'GAT_results.pickle'
-with open(_f, 'wb') as f:
-    pickle.dump(tmp_results, f)
-
-logger.info(f"Stored GAT results at {_f}")
-
-# aggregate into numpy array, with axes (subject, fold, n_times, n_times)
-agg_results = np.empty(shape=(len(tmp_results), *next(iter(tmp_results.values())).shape))
-for i, (key, val) in enumerate(tmp_results.items()):
-    agg_results[i] = val
-
-# plot the average scoring matrix of all subjects
-fig, ax = GeneralizationScoreMatrix(scores_matrix = agg_results.mean(axis=(0,1)), 
-                                    times_limits = (T_MIN, T_MAX),
-                                    score_method = 'accuracy')
-
-fig.savefig(SAVE_DIR_GEN_MATRIX / 'average_over_subjects.png', dpi=450)
+    logger.info(f"Stored GAT results at {_f}")
 
 
 if __name__ == ' __main__':
     print('THIS SCRIPT IS NOT MEANT TO BE RUN INDEPENDENTLY')
+    GAT_main()

@@ -10,6 +10,11 @@ from mne import set_log_level;                  set_log_level(logging.ERROR)
 import matplotlib
 matplotlib.use('Agg')
 
+from MVPA.preprocessing import preprocessing_main
+from MVPA.GAT import GAT_main
+from MVPA.plotting import plotting_main
+
 if __name__ == '__main__':
-    from MVPA.preprocessing import *
-    from MVPA.GAT import *
+    preprocessing_main()
+    GAT_main()
+    plotting_main()
