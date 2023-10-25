@@ -11,7 +11,7 @@ Written with [MNE-Python](https://mne.tools/stable/index.html "https://mne.tools
 See MNE import documentation for BrainVision files
 - MNE importing in general: https://mne.tools/stable/auto_tutorials/io/20_reading_eeg_data.html#brainvision-vhdr-vmrk-eeg
 - BrainVision only: https://mne.tools/stable/generated/mne.io.read_raw_brainvision.html#mne.io.read_raw_brainvision
-- ```.vhdr``` files are detected, accompanying files (```.vmrk```, ```.eeg```) should be named identically --- except for the extension ---  for the import to work.
+- ```.vhdr``` files are detected, accompanying files (```.vmrk```, ```.eeg```) should be named identically for the import to work.
 
 Files provided to the module should contain:
 - Preprocessed data channels
@@ -27,7 +27,7 @@ Files provided to the module should contain:
 
 ## How to run
 
-First, open the module's ```PARAMETERS.py``` file, edit the parameter values to your liking, and *save the file*. Then, run the following command in the terminal:
+First, open the module's ```PARAMETERS.toml``` file, edit the parameter values to your liking, and *save the file*. Then, run the following command in the terminal:
 
 ```unix
 python -m MVPA
