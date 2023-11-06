@@ -57,7 +57,7 @@ MODEL = 'LogRes'
 
 # available classification scoring methods: 
 # https://scikit-learn.org/stable/modules/model_evaluation.html
-SCORING = 'accuracy'
+SCORING = 'roc_auc'
 
 # no. of cross-validation folds to use
 CROSS_VAL_FOLDS = 5

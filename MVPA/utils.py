@@ -82,5 +82,13 @@ class SubjectFiles:
     def gat(self) -> pathlib.Path:
         return self.tmp / (self.stem + '-gat.npy')
     
+    @property
+    def spat_filter(self) -> pathlib.Path:
+        return self.tmp / (self.stem + '-spat_filters-ave.fif')
+    
+    @property
+    def spat_pattern(self) -> pathlib.Path:
+        return self.tmp / (self.stem + '-spat_patterns-ave.fif')
+    
     def png(self, plot_name: str) -> pathlib.Path:
         return self.plot / (self.stem + '-' + plot_name + '.png')

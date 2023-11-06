@@ -5,7 +5,7 @@ import pickle
 import numpy as np
 
 import mne
-from mne.decoding import GeneralizingEstimator, cross_val_multiscore 
+from mne.decoding import GeneralizingEstimator, cross_val_multiscore, Vectorizer
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
@@ -19,7 +19,8 @@ from .utils import config_prep, SubjectFiles
 CONFIG = config_prep()
 
 class MVPA_manager:
-    def __init__(self, data_path=CONFIG['PATHS']['DATA'], save_path=CONFIG['PATHS']['SAVE']):
+    def __init__(self, data_path=CONFIG['PATHS']['DATA'], 
+                 save_path=CONFIG['PATHS']['SAVE']):
         if data_path.is_file():
             self.subjects = [SubjectFiles(data_path, save_path)]
         elif data_path.is_dir():
@@ -115,30 +116,38 @@ class MVPA_manager:
     # ----- GAT MVPA ----- #
     ########################
 
-    def _gat(self, subject: SubjectFiles):
-        logging.debug(f"Loading file {subject.epoch}")
-        data_epochs = mne.read_epochs(subject.epoch)
-
+    def _get_model_object(self, model):
         from sklearn.linear_model import LinearRegression, RidgeClassifier, LogisticRegression
         from sklearn.svm import SVC
 
         # available methods
-        models = dict(OLS  = LinearRegression(),                                                     # Ordinary Least Squares Regression
-                    LogRes = LogisticRegression(solver="liblinear", **CONFIG['DECODING']['MODEL_ARGS']),                 # Logistic Regression
-                    Ridge  = RidgeClassifier(**CONFIG['DECODING']['MODEL_ARGS']),                                        # Ridge Regression / Tikhonov regularisation
-                    SVC    = SVC(kernel='linear', random_state=CONFIG['DECODING']['RAND_STATE'], **CONFIG['DECODING']['MODEL_ARGS']),          # Linear Support Vector Machine
-                    SVM    = SVC(kernel='rbf', random_state=CONFIG['DECODING']['RAND_STATE'], **CONFIG['DECODING']['MODEL_ARGS']),             # Non-linear Support Vector Machine
+        models = dict(OLS  = LinearRegression(),                                                                                            # Ordinary Least Squares Regression
+                    LogRes = LogisticRegression(solver="liblinear", **CONFIG['DECODING']['MODEL_ARGS']),                                    # Logistic Regression
+                    Ridge  = RidgeClassifier(**CONFIG['DECODING']['MODEL_ARGS']),                                                           # Ridge Regression / Tikhonov regularisation
+                    SVC    = SVC(kernel='linear', random_state=CONFIG['DECODING']['RAND_STATE'], **CONFIG['DECODING']['MODEL_ARGS']),       # Linear Support Vector Machine
+                    SVM    = SVC(kernel='rbf', random_state=CONFIG['DECODING']['RAND_STATE'], **CONFIG['DECODING']['MODEL_ARGS']),          # Non-linear Support Vector Machine
                     )
         
-        if CONFIG['DECODING']['MODEL'] not in [m for m in models.keys()]:
-            raise ValueError(f"Unrecognised decoder model (got {CONFIG['DECODING']['MODEL']}, expected one of {[m for m in models.keys()]}")
+        if model not in [m for m in models.keys()]:
+            raise ValueError(f"Unrecognised decoder model (got {model}, expected one of {[m for m in models.keys()]})")
+        
+        return models[model]
+
+    def _gat(self, subject: SubjectFiles, 
+             model=CONFIG['DECODING']['MODEL'],
+             cv_folds=CONFIG['DECODING']['CROSS_VAL_FOLDS'],
+             scoring=CONFIG['DECODING']['SCORING'],
+             n_jobs=CONFIG['DECODING']['N_JOBS'],
+             ):
+        logger.debug(f"Loading file {subject.epoch}")
+        data_epochs = mne.read_epochs(subject.epoch)
 
         pipeline = make_pipeline(StandardScaler(),
-                                 models[CONFIG['DECODING']['MODEL']])
+                                 self._get_model_object(model))
 
         generalizer = GeneralizingEstimator(pipeline,
-                                            scoring=CONFIG['DECODING']['SCORING'],
-                                            n_jobs=CONFIG['DECODING']['N_JOBS'],
+                                            scoring=scoring,
+                                            n_jobs=n_jobs,
                                             verbose=logger.level)
 
         # TODO: 1 event seems to get dropped here
@@ -155,8 +164,8 @@ class MVPA_manager:
         scores = cross_val_multiscore(generalizer,
                                       data_matrix,
                                       labels,
-                                      cv=CONFIG['DECODING']['CROSS_VAL_FOLDS'],
-                                      n_jobs=CONFIG['DECODING']['N_JOBS']
+                                      cv=cv_folds,
+                                      n_jobs=n_jobs
                                       )
 
         # store results in temp folder, to be imported later
@@ -205,3 +214,56 @@ class MVPA_manager:
         logger.debug("Consolidating GAT results")
         self.aggregate_gat_results()
 
+    def _sensor_space_decoding(self, subject,
+                        model=CONFIG['DECODING']['MODEL'],
+                        cv_folds=CONFIG['DECODING']['CROSS_VAL_FOLDS'],
+                        scoring=CONFIG['DECODING']['SCORING'],
+                        n_jobs=CONFIG['DECODING']['N_JOBS'],):
+        """
+        See https://mne.tools/stable/auto_examples/decoding/linear_model_patterns.html
+        """
+        logger.debug(f"Loading file {subject.epoch}")
+        data_epochs = mne.read_epochs(subject.epoch)
+
+        from mne.decoding import LinearModel, get_coef
+
+        clf = make_pipeline(Vectorizer(),
+                            StandardScaler(),
+                            LinearModel(self._get_model_object(model)))
+
+        # TODO: 1 event seems to get dropped here
+        data_matrix = data_epochs.get_data(picks='data') # pick only good EEG channels
+
+        # produce labels based on user-indicated condition/marker mapping
+        labels = np.empty(shape=(len(data_epochs.events[:,-1])), dtype=object)
+        for cond, markers in CONFIG['CONDITION_STIMULI'].items():
+            for marker in markers:
+                labels[data_epochs.events[:,-1] == marker] = cond
+
+        logger.info("Performing fitting")
+        clf.fit(data_matrix, labels)
+
+        # inverse-transform results for storage
+        coef = get_coef(clf, 'filters_', inverse_transform=True)
+        evoked = mne.EvokedArray(coef, data_epochs.pick('eeg', exclude=['bads', 'eog']).info, tmin=data_epochs.tmin)
+        logger.debug(f"Storing filter evokeds at {subject.spat_filter}")
+        evoked.save(subject.spat_filter)
+        
+        coef = get_coef(clf, 'patterns_', inverse_transform=True)
+        evoked = mne.EvokedArray(coef, data_epochs.pick('eeg', exclude=['bads', 'eog']).info, tmin=data_epochs.tmin)
+        logger.debug(f"Storing pattern evokeds at {subject.spat_pattern}")
+        evoked.save(subject.spat_pattern)
+        
+
+    def run_all_sensor_space_decoding(self, rm_existing=True):
+        # remove existing -spat.npy files from tmp directory
+        if rm_existing:
+            # remove existing GAT files from directory
+            for f_ in CONFIG['PATHS']['TMP'].glob('*-spat*-ave.fif'): # FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
+                if f_.is_file(): f_.unlink()
+                else: raise Exception(f"Please do not alter contents of {CONFIG['PATHS']['TMP']}")
+
+        # run Spatial Searchlight Decoding for each subject individually
+        for i, subject in enumerate(self.subjects, start=1):
+            logger.info(f"Fitting sensor decoding for subject {i}/{len(self.subjects)}")
+            self._sensor_space_decoding(subject)
