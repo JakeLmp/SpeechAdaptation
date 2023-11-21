@@ -83,6 +83,10 @@ class SubjectFiles:
         return self.tmp / (self.stem + '-gat.npy')
     
     @property
+    def gat_pvals(self) -> pathlib.Path:
+        return self.tmp / (self.stem + '-gat_pval.npy')
+    
+    @property
     def spat_filter(self) -> pathlib.Path:
         return self.tmp / (self.stem + '-spat_filters-ave.fif')
     

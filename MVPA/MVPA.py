@@ -1,5 +1,5 @@
 import logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('MVPA')
 
 import pickle
 import numpy as np
@@ -15,22 +15,22 @@ from warnings import filterwarnings
 from sklearn.exceptions import ConvergenceWarning
 filterwarnings("once", category=ConvergenceWarning)
 
-from .utils import config_prep, SubjectFiles
-CONFIG = config_prep()
+import MVPA.utils, MVPA.stat_utils
+CONFIG = MVPA.utils.config_prep()
 
 class MVPA_manager:
     def __init__(self, data_path=CONFIG['PATHS']['DATA'], 
                  save_path=CONFIG['PATHS']['SAVE']):
         if data_path.is_file():
-            self.subjects = [SubjectFiles(data_path, save_path)]
+            self.subjects = [MVPA.utils.SubjectFiles(data_path, save_path)]
         elif data_path.is_dir():
-            self.subjects = [SubjectFiles(f, save_path) for f in data_path.glob('*.vhdr')]
+            self.subjects = [MVPA.utils.SubjectFiles(f, save_path) for f in data_path.glob('*.vhdr')]
 
     #############################
     # ----- PREPROCESSING ----- #
     #############################
 
-    def _preprocess(self, subject: SubjectFiles):
+    def _preprocess(self, subject: MVPA.utils.SubjectFiles):
         data_raw = mne.io.read_raw_brainvision(subject.raw, **CONFIG['MNE']['IMPORT_ARGS'])
 
         data_raw.load_data()
@@ -133,7 +133,7 @@ class MVPA_manager:
         
         return models[model]
 
-    def _gat(self, subject: SubjectFiles, 
+    def _gat(self, subject: MVPA.utils.SubjectFiles, 
              model=CONFIG['DECODING']['MODEL'],
              cv_folds=CONFIG['DECODING']['CROSS_VAL_FOLDS'],
              scoring=CONFIG['DECODING']['SCORING'],
@@ -214,6 +214,26 @@ class MVPA_manager:
         logger.debug("Consolidating GAT results")
         self.aggregate_gat_results()
 
+        # p-value calculation with FDR correction
+        logger.info("Calculating p-values")
+
+        with open(CONFIG['PATHS']['SAVE'] / 'GAT_results.npy', 'rb') as f:
+            scores = np.load(f)
+        
+        p_values = MVPA.stat_utils.get_p_scores(scores.mean(1), # use average of folds
+                                                chance= 1/len(CONFIG['CONDITION_STIMULI']), # 1/no_of_conditions
+                                                tfce=False) # use FDR instead of TFCE
+
+        # store p-values
+        f = CONFIG['PATHS']['SAVE'] / 'GAT_pvalues.npy'
+        with open(f, 'wb') as tmp:
+            np.save(tmp, p_values)
+            logger.debug(f"Wrote GAT p-values to {tmp.name}")
+
+    #################################
+    # ----- SENSOR SPACE MVPA ----- #
+    #################################
+    
     def _sensor_space_decoding(self, subject,
                         model=CONFIG['DECODING']['MODEL'],
                         cv_folds=CONFIG['DECODING']['CROSS_VAL_FOLDS'],
