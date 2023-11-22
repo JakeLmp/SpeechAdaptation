@@ -1,26 +1,33 @@
+import logging
+logger = logging.getLogger('MVPA')
+
 import matplotlib.pyplot as plt
 import numpy as np
-import pathlib, pickle
+# import pathlib, pickle
 
-from .stat_utils import get_p_scores
+# from .stat_utils import get_p_scores
+from .utils import config_prep
+CONFIG = config_prep()
 
-from .PARAMETERS import *
-
-def GeneralizationScoreMatrix(scores_matrix, times_limits, score_method, p_val_contour=True, imshow_kwargs={}):
+def GeneralizationScoreMatrix(scores_matrix, times_limits, score_method, p_values=None, p_value_threshold=0.01, imshow_kwargs={}):
     """
     Plot the Time-Generalised Decoding score matrix.
 
     Args:
-        scores_matrix (numpy array): 
-            Matrix of shape (n_subjects, n_times, n_times) 
+        scores_matrix (numpy ndarray): 
+            Matrix of shape (n_subjects, n_times, n_times)
             containing scores of decoders for each subject, 
             at each testing time, for each training time
         times_limits (tuple): 
             (t_start, t_end) the start and end times of the x axis
         score_method (str): 
             scoring method used in calculating the decoder scores
-        p_val_contour (bool):
-            whether to plot a significance contour (p<0.01)
+        p_values (numpy ndarray):
+            Default None, else a numpy ndarray of shape (n_times, n_times) 
+            containing p-values to be used in plotting a 
+            significance contour
+        p_value_threshold (float):
+            Default 0.01, p-value threshold value to use in masking
         imshow_kwargs (dict): 
             keyword arguments to be passed to matplotlib.pyplot.imshow
 
@@ -34,17 +41,52 @@ def GeneralizationScoreMatrix(scores_matrix, times_limits, score_method, p_val_c
               }
 
     kwargs.update(imshow_kwargs)
+    
+    # we need the mean over subjects
+    data = scores_matrix.mean(0)
 
-    if p_val_contour:
-        mask = get_p_scores(scores_matrix) < 0.01
-        # TODO: implement contouring in imshow
+    # create mask for significant area
+    if isinstance(p_values, np.ndarray):
+        mask = p_values < p_value_threshold
+    # if no p-values, everything is significant
+    else:
+        mask = np.ones_like(data, dtype='int')
 
     fig, ax = plt.subplots(1, 1)
+
+    # if isinstance(p_values, np.ndarray):
+    #     ax.contour(mask, 
+    #                levels=[0.5],
+    #                linewidths=[1],
+    #                colors=['k'],
+    #                corner_mask=False,
+    #               )
+
+    # create alpha value array, where non-significant elements get lower alpha
+    alpha = np.ones_like(data, dtype='float32')
+    alpha[~mask] = 0.5
+
     im = ax.imshow(
-        scores_matrix.mean(axis=0),
+        data,
+        alpha=alpha,
         extent=(*times_limits, *times_limits),
         **kwargs
     )
+    
+    # lastly, we draw contour lines around significant areas (if p_values is given)
+    if isinstance(p_values, np.ndarray):
+        # matplotlib requires weird coordinate formats, this complies to that.
+        x = np.linspace(*times_limits, data.shape[0])
+        y = np.linspace(*times_limits, data.shape[1])
+        x, y = np.meshgrid(x, y)
+        
+        ax.contour(x, y, mask, 
+                   levels=[0.5],
+                   linewidths=[1],
+                   colors=['k'],
+                   corner_mask=False,
+                  )
+
     ax.set_xlabel("Testing Time (s)")
     ax.set_ylabel("Training Time (s)")
     ax.set_title("Temporal generalization")
@@ -121,34 +163,18 @@ def GeneralizationDiagonal(scores_matrix, times_limits, score_method, plot_kwarg
 
     return fig, ax
 
-
-def plotting_main(GAT_file = SAVE_DIR / 'GAT_results.pickle'):
-    with open(GAT_file, 'rb') as f:
-        all_scores = pickle.load(f)
+def generate_all_plots():
+    # --- GAT plots
+    f = CONFIG['PATHS']['SAVE'] / 'GAT_results.npy'
+    with open(f, 'rb') as tmp:
+        GAT_results = np.load(tmp)
     
-    agg_results = np.empty(shape=(len(all_scores), *next(iter(all_scores.values())).shape))
-    for i, (key, scores) in enumerate(all_scores.items()):       
-        # aggregate all results into numpy array, with axes (subject, fold, n_times, n_times)
-        agg_results[i] = scores
-
-        # take mean score over folds
-        mean_scores = scores.mean(0)
-
-        # plot the scoring matrix of this subject
-        fig, ax = GeneralizationScoreMatrix(scores_matrix = mean_scores, 
-                                            times_limits = (T_MIN, T_MAX),
-                                            score_method = SCORING)
-        
-        fig.savefig(SAVE_DIRS_DICT["Temporal Generalization Matrix"] / (key + '.png'), dpi=450)
-
-    # plot the average scoring matrix of all subjects
-    fig, ax = GeneralizationScoreMatrix(scores_matrix = agg_results.mean(axis=(0,1)), 
-                                        times_limits = (T_MIN, T_MAX),
-                                        score_method = 'accuracy')
-
-    fig.savefig(SAVE_DIRS_DICT["Temporal Generalization Matrix"] / 'average_over_subjects.png', dpi=450)
-
+    f = CONFIG['PATHS']['SAVE'] / 'GAT_pvalues.npy'
+    with open(f, 'rb') as tmp:
+        GAT_pvalues = np.load(tmp)
+    
+    fig, ax = GeneralizationScoreMatrix(GAT_results.mean(1))
+    
 
 if __name__ == '__main__':
     print('THIS SCRIPT IS NOT MEANT TO BE RUN INDEPENDENTLY')
-    plotting_main()
