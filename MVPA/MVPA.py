@@ -5,10 +5,7 @@ import pickle
 import numpy as np
 
 import mne
-from mne.decoding import GeneralizingEstimator, cross_val_multiscore, Vectorizer
-
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
+import sklearn.pipeline, sklearn.preprocessing
 
 # prevent commandline output from getting cluttered by repetitive warnings
 from warnings import filterwarnings
@@ -18,7 +15,7 @@ filterwarnings("once", category=ConvergenceWarning)
 import MVPA.utils, MVPA.stat_utils
 CONFIG = MVPA.utils.config_prep()
 
-class MVPA_manager:
+class DecodingManager:
     def __init__(self, data_path=CONFIG['PATHS']['DATA'], 
                  save_path=CONFIG['PATHS']['SAVE']):
         if data_path.is_file():
@@ -142,13 +139,15 @@ class MVPA_manager:
         logger.debug(f"Loading file {subject.epoch}")
         data_epochs = mne.read_epochs(subject.epoch)
 
-        pipeline = make_pipeline(StandardScaler(),
-                                 self._get_model_object(model))
+        pipeline = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(),
+                                                  self._get_model_object(model)
+                                                  )
 
-        generalizer = GeneralizingEstimator(pipeline,
-                                            scoring=scoring,
-                                            n_jobs=n_jobs,
-                                            verbose=logger.level)
+        generalizer = mne.decoding.GeneralizingEstimator(pipeline,
+                                                         scoring=scoring,
+                                                         n_jobs=n_jobs,
+                                                         verbose=logger.level
+                                                         )
 
         # TODO: 1 event seems to get dropped here
         data_matrix = data_epochs.get_data(picks='data') # pick only good EEG channels
@@ -161,12 +160,12 @@ class MVPA_manager:
 
         # run fitting/cross validation
         logger.info("Performing fitting and cross-validation")
-        scores = cross_val_multiscore(generalizer,
-                                      data_matrix,
-                                      labels,
-                                      cv=cv_folds,
-                                      n_jobs=n_jobs
-                                      )
+        scores = mne.decoding.cross_val_multiscore(generalizer,
+                                                   data_matrix,
+                                                   labels,
+                                                   cv=cv_folds,
+                                                   n_jobs=n_jobs
+                                                   )
 
         # store results in temp folder, to be imported later
         with open(subject.gat, 'wb') as tmp:
@@ -245,11 +244,10 @@ class MVPA_manager:
         logger.debug(f"Loading file {subject.epoch}")
         data_epochs = mne.read_epochs(subject.epoch)
 
-        from mne.decoding import LinearModel, get_coef
-
-        clf = make_pipeline(Vectorizer(),
-                            StandardScaler(),
-                            LinearModel(self._get_model_object(model)))
+        clf = sklearn.pipeline.make_pipeline(mne.decoding.Vectorizer(),
+                                             sklearn.preprocessing.StandardScaler(),
+                                             mne.decoding.LinearModel(self._get_model_object(model))
+                                             )
 
         # TODO: 1 event seems to get dropped here
         data_matrix = data_epochs.get_data(picks='data') # pick only good EEG channels
@@ -264,13 +262,15 @@ class MVPA_manager:
         clf.fit(data_matrix, labels)
 
         # inverse-transform results for storage
-        coef = get_coef(clf, 'filters_', inverse_transform=True)
-        evoked = mne.EvokedArray(coef, data_epochs.pick('eeg', exclude=['bads', 'eog']).info, tmin=data_epochs.tmin)
+        coef = mne.decoding.get_coef(clf, 'filters_', inverse_transform=True)
+        evoked = mne.EvokedArray(coef, data_epochs.pick('eeg', exclude=['bads', 'eog']).info, 
+                                 tmin=data_epochs.tmin)
         logger.debug(f"Storing filter evokeds at {subject.spat_filter}")
         evoked.save(subject.spat_filter)
         
-        coef = get_coef(clf, 'patterns_', inverse_transform=True)
-        evoked = mne.EvokedArray(coef, data_epochs.pick('eeg', exclude=['bads', 'eog']).info, tmin=data_epochs.tmin)
+        coef = mne.decoding.get_coef(clf, 'patterns_', inverse_transform=True)
+        evoked = mne.EvokedArray(coef, data_epochs.pick('eeg', exclude=['bads', 'eog']).info, 
+                                 tmin=data_epochs.tmin)
         logger.debug(f"Storing pattern evokeds at {subject.spat_pattern}")
         evoked.save(subject.spat_pattern)
         
