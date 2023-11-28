@@ -27,7 +27,7 @@ Files provided to the module should contain:
 
 ## How to run
 
-First, open the module's ```PARAMETERS.toml``` file, edit the parameter values to your liking, and *save the file*. Then, run the following command in the terminal:
+First, open the package's ```PARAMETERS.toml``` file, edit the parameter values to your liking, and *save the file*. Then, run the following command in the terminal:
 
 ```unix
 python -m MVPA

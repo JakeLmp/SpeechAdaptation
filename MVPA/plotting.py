@@ -4,6 +4,7 @@ logger = logging.getLogger('MVPA')
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
+import mne
 # import pathlib, pickle
 
 # from .stat_utils import get_p_scores
@@ -162,13 +163,15 @@ def GeneralizationDiagonal(scores_matrix, times_limits, score_method, p_values=N
     x = np.linspace(*times_limits, data.shape[0])
     y = np.diagonal(data)                               # diagonal of mean over subjects
     
-    res = scipy.stats.bootstrap((np.diagonal(scores_matrix, axis1=1, axis2=2),), np.mean, axis=0,  
-                                confidence_level=0.95,
-                                n_resamples=1000
-                                )
-    ci_l, ci_u = res.confidence_interval    # lower and upper bound of 95% conf. int. of mean
-
-    # y_err = np.diagonal(np.std(scores_matrix, axis=0))  # diagonal of standard deviations over subjects
+    # if more than 1 subject, we can calculate a confidence interval
+    if scores_matrix.shape[0] > 1:
+        res = scipy.stats.bootstrap((np.diagonal(scores_matrix, axis1=1, axis2=2),), np.mean, axis=0,  
+                                    confidence_level=0.95,
+                                    n_resamples=1000
+                                    )
+        ci_l, ci_u = res.confidence_interval    # lower and upper bound of 95% conf. int. of mean
+    else: # use a band of width 0
+        ci_l, ci_u = y.copy(), y.copy()
 
     fig, ax = LineBandPlot(x, y, ci_l, ci_u, plot_kwargs=kwargs)
 
@@ -204,7 +207,26 @@ def GeneralizationDiagonal(scores_matrix, times_limits, score_method, p_values=N
 
     return fig, ax
 
-def generate_all_plots(save_kwargs={}):
+def ChannelAccuracyTopo():
+    """
+    TO DO
+    """
+    fig, ax = plt.subplots(1, 1)
+
+    im, cn = mne.viz.plot_topomap(
+        data=scores.mean(0), 
+        pos=np.array([ch['loc'][:2] for ch in data_epochs.pick('data').info['chs']]),
+        names=[ch['ch_name'] for ch in data_epochs.pick('data').info['chs']],
+        res=1000,
+        size=3,
+        axes=ax
+        )
+
+    cbar = plt.colorbar(im, ax=ax)
+
+def generate_all_plots(spoofed_subject=False, save_kwargs={}):
+    logger.info("Generating plots")
+
     kwargs = dict(dpi=450,
                   )
     
@@ -215,9 +237,12 @@ def generate_all_plots(save_kwargs={}):
     with open(f, 'rb') as tmp:
         GAT_results = np.load(tmp)
     
-    f = CONFIG['PATHS']['SAVE'] / 'GAT_pvalues.npy'
-    with open(f, 'rb') as tmp:
-        GAT_pvalues = np.load(tmp)
+    if not spoofed_subject:
+        f = CONFIG['PATHS']['SAVE'] / 'GAT_pvalues.npy'
+        with open(f, 'rb') as tmp:
+            GAT_pvalues = np.load(tmp)
+    else:
+        GAT_pvalues = None
     
     fig, ax = GeneralizationScoreMatrix(GAT_results.mean(1), 
                                         times_limits=(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']),

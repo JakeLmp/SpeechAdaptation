@@ -8,11 +8,16 @@ from mne import set_log_level;                  set_log_level(logging.ERROR)
 
 from . import MVPA, plotting
 
+import argparse
+
 def main():
+    # parser = argparse.ArgumentParser("to do")
+
     manager = MVPA.DecodingManager()
     manager.preprocess_all()
+    # manager.spoof_single_subject()
     manager.run_all_gat()
-    manager.run_all_sensor_space_decoding()
+    manager.run_all_temporal_decoding()
 
     # at this point, all calculation work should be finished
     # and we can generate plots using the results

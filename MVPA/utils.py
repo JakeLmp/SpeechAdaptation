@@ -87,12 +87,20 @@ class SubjectFiles:
         return self.tmp / (self.stem + '-gat_pval.npy')
     
     @property
-    def spat_filter(self) -> pathlib.Path:
-        return self.tmp / (self.stem + '-spat_filters-ave.fif')
+    def temporal_scores(self) -> pathlib.Path:
+        return self.tmp / (self.stem + '-temporal_scores.npy')
+
+    @property
+    def temporal_filter(self) -> pathlib.Path:
+        return self.tmp / (self.stem + '-temporal_filters-ave.fif')
     
     @property
-    def spat_pattern(self) -> pathlib.Path:
-        return self.tmp / (self.stem + '-spat_patterns-ave.fif')
+    def temporal_pattern(self) -> pathlib.Path:
+        return self.tmp / (self.stem + '-temporal_patterns-ave.fif')
+    
+    @property
+    def channel_scores(self) -> pathlib.Path:
+        return self.tmp / (self.stem + '-channel_scores.npy')
     
     def png(self, plot_name: str) -> pathlib.Path:
         return self.plot / (self.stem + '-' + plot_name + '.png')

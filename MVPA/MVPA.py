@@ -109,9 +109,41 @@ class DecodingManager:
             logger.info(f"Preprocessing file {i}/{len(self.subjects)} : {subject.raw}")
             self._preprocess(subject)
 
-    ########################
-    # ----- GAT MVPA ----- #
-    ########################
+    def spoof_single_subject(self, rm_existing=True):
+        """
+        Combine all subject data into single file, and continue analysis
+        as if there is just one subject. 
+        
+        WARNING:
+        This greatly increases memory demands, since all data is now loaded at once.
+        """
+        
+        # create list of epoch objects without loading data
+        epochs_list = [mne.read_epochs(subject.epoch, preload=False) for subject in self.subjects]
+
+        # combine epochs (this loads data)
+        subjects_combined = mne.concatenate_epochs(epochs_list, verbose=logger.level)
+
+        # save object to file, then delete the object
+        f = CONFIG['PATHS']['TMP'] / 'subjects_combined-epo.fif'
+        
+        from copy import deepcopy
+        spoof_subject = deepcopy(self.subjects[0])
+        spoof_subject.path = CONFIG['PATHS']['TMP'] / 'subjects_combined.fakesuffix'
+
+        subjects_combined.save(spoof_subject.epoch, overwrite=rm_existing, verbose=True)
+        del subjects_combined
+        
+        # remove old epoch files
+        # for subject in self.subjects:
+        #     subject.epoch.unlink()
+
+        # replace subject list with spoofed subject
+        self.subjects = [spoof_subject]
+
+    ######################
+    # ----- MODELS ----- #
+    ######################
 
     def _get_model_object(self, model):
         from sklearn.linear_model import LinearRegression, RidgeClassifier, LogisticRegression
@@ -129,6 +161,10 @@ class DecodingManager:
             raise ValueError(f"Unrecognised decoder model (got {model}, expected one of {[m for m in models.keys()]})")
         
         return models[model]
+
+    ########################
+    # ----- GAT MVPA ----- #
+    ########################
 
     def _gat(self, subject: MVPA.utils.SubjectFiles, 
              model=CONFIG['DECODING']['MODEL'],
@@ -172,7 +208,7 @@ class DecodingManager:
             np.save(tmp, scores)
             logger.debug(f"Wrote cross validation scores to {tmp.name}")
     
-    def aggregate_gat_results(self, keep_names=False):
+    def _aggregate_gat_results(self, keep_names=False):
         # read scores from tmp files
         results_dict = {}
         for subject in self.subjects:
@@ -211,7 +247,7 @@ class DecodingManager:
             self._gat(subject)
         
         logger.debug("Consolidating GAT results")
-        self.aggregate_gat_results()
+        self._aggregate_gat_results()
 
         # p-value calculation with FDR correction
         logger.info("Calculating p-values")
@@ -219,35 +255,47 @@ class DecodingManager:
         with open(CONFIG['PATHS']['SAVE'] / 'GAT_results.npy', 'rb') as f:
             scores = np.load(f)
         
-        p_values = MVPA.stat_utils.get_p_scores(scores.mean(1), # use average of folds
-                                                chance= 1/len(CONFIG['CONDITION_STIMULI']), # 1/no_of_conditions
-                                                tfce=False) # use FDR instead of TFCE
+        if len(self.subjects) > 1:
+            p_values = MVPA.stat_utils.get_p_scores(scores.mean(1), # use average of folds
+                                                    chance= 1/len(CONFIG['CONDITION_STIMULI']), # 1/no_of_conditions
+                                                    tfce=False) # use FDR instead of TFCE
 
-        # store p-values
-        f = CONFIG['PATHS']['SAVE'] / 'GAT_pvalues.npy'
-        with open(f, 'wb') as tmp:
-            np.save(tmp, p_values)
-            logger.debug(f"Wrote GAT p-values to {tmp.name}")
+            # store p-values
+            f = CONFIG['PATHS']['SAVE'] / 'GAT_pvalues.npy'
+            with open(f, 'wb') as tmp:
+                np.save(tmp, p_values)
+                logger.debug(f"Wrote GAT p-values to {tmp.name}")
 
-    #################################
-    # ----- SENSOR SPACE MVPA ----- #
-    #################################
+    #############################
+    # ----- TEMPORAL MVPA ----- #
+    #############################
     
-    def _sensor_space_decoding(self, subject,
-                        model=CONFIG['DECODING']['MODEL'],
-                        cv_folds=CONFIG['DECODING']['CROSS_VAL_FOLDS'],
-                        scoring=CONFIG['DECODING']['SCORING'],
-                        n_jobs=CONFIG['DECODING']['N_JOBS'],):
+    def _temporal_decoding(self, subject,
+                           model=CONFIG['DECODING']['MODEL'],
+                           cv_folds=CONFIG['DECODING']['CROSS_VAL_FOLDS'],
+                           scoring=CONFIG['DECODING']['SCORING'],
+                           n_jobs=CONFIG['DECODING']['N_JOBS']
+                           ):
         """
         See https://mne.tools/stable/auto_examples/decoding/linear_model_patterns.html
+        and also https://mne.tools/stable/auto_tutorials/machine-learning/50_decoding.html#temporal-decoding
+
+        Use channels as features, time points as samples.
         """
         logger.debug(f"Loading file {subject.epoch}")
         data_epochs = mne.read_epochs(subject.epoch)
 
-        clf = sklearn.pipeline.make_pipeline(mne.decoding.Vectorizer(),
-                                             sklearn.preprocessing.StandardScaler(),
-                                             mne.decoding.LinearModel(self._get_model_object(model))
-                                             )
+        pipeline = sklearn.pipeline.make_pipeline(
+                                                #   mne.decoding.Vectorizer(),
+                                                  sklearn.preprocessing.StandardScaler(),
+                                                  mne.decoding.LinearModel(self._get_model_object(model))
+                                                  )
+
+        estimator = mne.decoding.SlidingEstimator(pipeline,
+                                                  n_jobs=n_jobs,
+                                                  scoring=scoring,
+                                                  verbose=logger.level
+                                                  )
 
         # TODO: 1 event seems to get dropped here
         data_matrix = data_epochs.get_data(picks='data') # pick only good EEG channels
@@ -259,31 +307,147 @@ class DecodingManager:
                 labels[data_epochs.events[:,-1] == marker] = cond
 
         logger.info("Performing fitting")
-        clf.fit(data_matrix, labels)
+        
+        # --- First obtaining the scores
+        scores = mne.decoding.cross_val_multiscore(estimator,
+                                                   data_matrix,
+                                                   labels,
+                                                   cv=cv_folds,
+                                                   n_jobs=n_jobs
+                                                   )
+
+        # store results in temp folder, to be imported later
+        with open(subject.temporal_scores, 'wb') as tmp:
+            np.save(tmp, scores)
+            logger.debug(f"Wrote cross validation scores to {tmp.name}")
+
+        # --- Now obtaining filters and patterns
+        estimator.fit(data_matrix, labels)
 
         # inverse-transform results for storage
-        coef = mne.decoding.get_coef(clf, 'filters_', inverse_transform=True)
+        coef = mne.decoding.get_coef(estimator, 'filters_', inverse_transform=True)
         evoked = mne.EvokedArray(coef, data_epochs.pick('eeg', exclude=['bads', 'eog']).info, 
                                  tmin=data_epochs.tmin)
-        logger.debug(f"Storing filter evokeds at {subject.spat_filter}")
-        evoked.save(subject.spat_filter)
+        logger.debug(f"Storing filter evokeds at {subject.temporal_filter}")
+        evoked.save(subject.temporal_filter)
         
-        coef = mne.decoding.get_coef(clf, 'patterns_', inverse_transform=True)
+        coef = mne.decoding.get_coef(estimator, 'patterns_', inverse_transform=True)
         evoked = mne.EvokedArray(coef, data_epochs.pick('eeg', exclude=['bads', 'eog']).info, 
                                  tmin=data_epochs.tmin)
-        logger.debug(f"Storing pattern evokeds at {subject.spat_pattern}")
-        evoked.save(subject.spat_pattern)
-        
+        logger.debug(f"Storing pattern evokeds at {subject.temporal_pattern}")
+        evoked.save(subject.temporal_pattern)
 
-    def run_all_sensor_space_decoding(self, rm_existing=True):
-        # remove existing -spat.npy files from tmp directory
+    def _aggregate_temporal_scores(self):
+        # get first subject's scores as template for array size
+        with open(self.subjects[0].temporal_scores, 'rb') as tmp:
+            scores = np.load(tmp)
+
+        # insert dimension for multiple subjects
+        scores.resize((len(self.subjects), *scores.shape))
+
+        # read remaining subject scores
+        for i, subject in enumerate(self.subjects[1:], start=1):
+            with open(subject.temporal_scores, 'rb') as tmp:
+                scores[i] = np.load(tmp)
+
+        f = CONFIG['PATHS']['SAVE'] / 'Temporal_Scores.npy'
+        with open(f, 'wb') as tmp:
+            np.save(tmp, scores)
+            logger.debug(f"Wrote aggregated temporal scores to {tmp.name}")
+
+    def _temporal_grand_avg(self,):
+        # read subject evokeds (only patterns are directly interpretable)
+        evokeds = []
+        for subject in self.subjects:
+            evokeds.extend(mne.read_evokeds(subject.temporal_pattern))
+        
+        # calculate and store grand average
+        grand_average = mne.grand_average(evokeds)
+
+        f = CONFIG['PATHS']['SAVE'] / 'Temporal_Grand_Avg.npy'
+        with open(f, 'wb') as tmp:
+            np.save(tmp, grand_average)
+            logger.debug(f"Wrote temporal pattern grand avg to {tmp.name}")
+
+    def run_all_temporal_decoding(self, rm_existing=True):
+        # remove existing -temporal_* files from tmp directory
         if rm_existing:
-            # remove existing GAT files from directory
-            for f_ in CONFIG['PATHS']['TMP'].glob('*-spat*-ave.fif'): # FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
+            # remove existing scoring files from directory
+            for f_ in CONFIG['PATHS']['TMP'].glob('*-temporal_scores.npy'):# FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
                 if f_.is_file(): f_.unlink()
                 else: raise Exception(f"Please do not alter contents of {CONFIG['PATHS']['TMP']}")
 
-        # run Spatial Searchlight Decoding for each subject individually
+            # remove existing pattern/filter files from directory
+            for f_ in CONFIG['PATHS']['TMP'].glob('*-temporal_*-ave.fif'): # FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
+                if f_.is_file(): f_.unlink()
+                else: raise Exception(f"Please do not alter contents of {CONFIG['PATHS']['TMP']}")
+
+        # run temporal decoding for each subject individually
         for i, subject in enumerate(self.subjects, start=1):
-            logger.info(f"Fitting sensor decoding for subject {i}/{len(self.subjects)}")
-            self._sensor_space_decoding(subject)
+            logger.info(f"Fitting temporal decoding for subject {i}/{len(self.subjects)}")
+            self._temporal_decoding(subject)
+        
+        # aggregate and save results
+        logger.debug("Consolidating results")
+        self._aggregate_temporal_scores()
+        self._temporal_grand_avg()
+
+    ############################
+    # ----- CHANNEL MVPA ----- #
+    ############################
+
+    def _channel_decoding(self, subject,
+                          model=CONFIG['DECODING']['MODEL'],
+                          cv_folds=CONFIG['DECODING']['CROSS_VAL_FOLDS'],
+                          scoring=CONFIG['DECODING']['SCORING'],
+                          n_jobs=CONFIG['DECODING']['N_JOBS']
+                          ):
+        """
+        Same as temporal decoding, but using time points as features, channels as samples.
+        """
+        logger.debug(f"Loading file {subject.epoch}")
+        data_epochs = mne.read_epochs(subject.epoch)
+
+        pipeline = sklearn.pipeline.make_pipeline(
+                                                #   mne.decoding.Vectorizer(),
+                                                  sklearn.preprocessing.StandardScaler(),
+                                                  mne.decoding.LinearModel(self._get_model_object(model))
+                                                  )
+
+        estimator = mne.decoding.SlidingEstimator(pipeline,
+                                                  n_jobs=n_jobs,
+                                                  scoring=scoring,
+                                                  verbose=logger.level
+                                                  )
+
+        # TODO: 1 event seems to get dropped here
+        data_matrix = data_epochs.get_data(picks='data') # pick only good EEG channels
+
+        # now for the big trick: transpose channel and time dimensions!
+        data_matrix = data_matrix.transpose((0,2,1))
+
+        # produce labels based on user-indicated condition/marker mapping
+        labels = np.empty(shape=(len(data_epochs.events[:,-1])), dtype=object)
+        for cond, markers in CONFIG['CONDITION_STIMULI'].items():
+            for marker in markers:
+                labels[data_epochs.events[:,-1] == marker] = cond
+
+        logger.info("Performing fitting")
+        
+        scores = mne.decoding.cross_val_multiscore(estimator,
+                                                   data_matrix,
+                                                   labels,
+                                                   cv=cv_folds,
+                                                   n_jobs=n_jobs
+                                                   )
+
+        # store results in temp folder, to be imported later
+        with open(subject.channel_scores, 'wb') as tmp:
+            np.save(tmp, scores)
+            logger.debug(f"Wrote cross validation scores to {tmp.name}")
+
+        def _aggregate_channel_scores(self,):
+            pass
+
+        def run_all_channel_decoding(self,):
+            pass
