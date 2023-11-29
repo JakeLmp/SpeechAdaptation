@@ -3,6 +3,7 @@ logger = logging.getLogger('MVPA')
 
 import pickle
 import numpy as np
+import matplotlib.pyplot as plt
 
 import mne
 import sklearn.pipeline, sklearn.preprocessing
@@ -91,6 +92,7 @@ class DecodingManager:
         data_epochs.average(picks=CONFIG['MNE']['ELECTRODES']['ERP_CHECK'] if len(CONFIG['MNE']['ELECTRODES']['ERP_CHECK']) > 0 else None) \
                 .plot() \
                 .savefig(subject.png('ERP'), dpi=300)
+        plt.close()
         
         # store files in tmp folder
         logger.debug(f"Storing processed data at {subject.epoch}")
