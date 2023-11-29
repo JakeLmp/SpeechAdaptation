@@ -29,6 +29,18 @@ def config_prep(config_file: str | pathlib.Path = pathlib.Path("MVPA/PARAMETERS.
     if not config_['PATHS']['PLOT'].exists():
         config_['PATHS']['PLOT'].mkdir()
     
+    # template info object
+    config_['PATHS']['INFO_OBJ'] = config_['PATHS']['TMP'] / 'first_subject-info.fif'
+
+    # aggregate result files
+    config_['PATHS']['RESULTS'] = {}
+    config_['PATHS']['RESULTS']['GAT_RESULTS'] = config_['PATHS']['SAVE'] / 'GAT_results.npy'
+    config_['PATHS']['RESULTS']['GAT_PVALUES'] = config_['PATHS']['SAVE'] / 'GAT_pvalues.npy'
+    config_['PATHS']['RESULTS']['TEMPORAL_SCORES'] = config_['PATHS']['SAVE'] / 'temporal_scores.npy'
+    config_['PATHS']['RESULTS']['TEMPORAL_GRAND_AVG'] = config_['PATHS']['SAVE'] / 'temporal_grand_avg.npy'
+    config_['PATHS']['RESULTS']['CHANNEL_SCORES'] = config_['PATHS']['SAVE'] / 'channel_scores.npy'
+    
+    
     return config_
 
 class SubjectFiles:

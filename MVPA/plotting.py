@@ -201,11 +201,70 @@ def GeneralizationDiagonal(scores_matrix, times_limits, score_method, p_values=N
                     solid_capstyle='round'
                     )
 
-    ax.set_title('Decoding accuracy on diagonal')
+    ax.set_title('Diagonal of GAT matrix')
     ax.set_xlabel('Time (s)')
     ax.set_ylabel(score_method)
 
     return fig, ax
+
+def ChannelScoresMatrix(scores_matrix, channel_labels, times_limits, score_method, imshow_kwargs={}):
+    """_summary_
+
+    Args:
+        scores_matrix (numpy ndarray): 
+            Matrix of shape (n_subjects, n_channels, n_times)
+            containing scores of decoders for each subject, 
+            for each channel, at each time point
+        channel_labels (list of str):
+            List containing channel labels in the same order
+            as the corresponding axis of scores_matrix
+        times_limits (tuple): 
+            (t_start, t_end) the start and end times of the x axis
+        score_method (str): 
+            scoring method used in calculating the decoder scores
+        imshow_kwargs (dict): 
+            keyword arguments to be passed to matplotlib.pyplot.imshow
+            Defaults to {}.
+    """
+    
+    kwargs = dict(interpolation = "lanczos",
+                  origin        = "lower",
+                  cmap          = "RdBu_r"
+                  )
+
+    kwargs.update(imshow_kwargs)
+
+    # we need the mean over subjects
+    data = scores_matrix.mean(0)
+    
+    fig, ax = plt.subplots(1, 1)
+
+    im = ax.imshow(
+        data,
+        extent=(*times_limits, *times_limits),
+        **kwargs
+    )
+
+    # y-axis tick positions
+    pos = np.linspace(*times_limits, len(channel_labels))
+    # pos = pos + (pos[1]-pos[0])/2 # offset by half the tick distance
+
+    # stagger every other label
+    channel_labels = [ch + 8*' ' if i%2==0 else ch for i, ch in enumerate(channel_labels)]
+    ax.set_yticks(pos, channel_labels,
+                  fontsize='xx-small',
+                  ha='right')
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Channel")
+    ax.set_title("Channel Decoding Score")
+    ax.axvline(0, color="k", linestyle=':')
+
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label(score_method)
+
+    return fig, ax
+
 
 def ChannelAccuracyTopo():
     """
@@ -233,12 +292,12 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
     kwargs.update(save_kwargs)
     
     # --- GAT plots
-    f = CONFIG['PATHS']['SAVE'] / 'GAT_results.npy'
+    f = CONFIG['PATHS']['RESULTS']['GAT_RESULTS']
     with open(f, 'rb') as tmp:
         GAT_results = np.load(tmp)
     
     if not spoofed_subject:
-        f = CONFIG['PATHS']['SAVE'] / 'GAT_pvalues.npy'
+        f = CONFIG['PATHS']['RESULTS']['GAT_PVALUES']
         with open(f, 'rb') as tmp:
             GAT_pvalues = np.load(tmp)
     else:
@@ -250,7 +309,9 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
                                         p_values=GAT_pvalues,
                                         p_value_threshold=0.05
                                         )
-    fig.savefig(CONFIG['PATHS']['PLOT'] / 'GAT_matrix.png', **kwargs)
+    f = CONFIG['PATHS']['PLOT'] / 'GAT_matrix.png'
+    fig.savefig(f, **kwargs)
+    logger.debug(f"Wrote GAT matrix plot to {f}")
     plt.close(fig)
     
     fig, ax = GeneralizationDiagonal(GAT_results.mean(1), 
@@ -259,7 +320,28 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
                                      p_values=GAT_pvalues,
                                      p_value_threshold=[0.05,0.01]
                                      )
-    fig.savefig(CONFIG['PATHS']['PLOT'] / 'GAT_diagonal.png', **kwargs)
+    f = CONFIG['PATHS']['PLOT'] / 'GAT_diagonal.png'
+    fig.savefig(f, **kwargs)
+    logger.debug(f"Wrote GAT diagonal plot to {f}")
+    plt.close(fig)
+
+    # --- temporal plots
+
+    pass
+
+    # --- channel plots
+
+    f = CONFIG['PATHS']['RESULTS']['CHANNEL_SCORES']
+    with open(f, 'rb') as tmp:
+        channel_results = np.load(tmp)
+
+    fig, ax = ChannelScoresMatrix(channel_results.mean(2), 
+                                  times_limits=(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']),
+                                  score_method=CONFIG['DECODING']['SCORING'],
+                                  )
+    f = CONFIG['PATHS']['PLOT'] / 'channel_scores.png'
+    fig.savefig(f, **kwargs)
+    logger.debug(f"Wrote channel scores plot to {f}")
     plt.close(fig)
 
 if __name__ == '__main__':

@@ -109,6 +109,10 @@ class DecodingManager:
             logger.info(f"Preprocessing file {i}/{len(self.subjects)} : {subject.raw}")
             self._preprocess(subject)
 
+        # store info object of first subject for easy later use
+        mne.read_epochs(self.subjects[0].epoch) \
+           .info.save(CONFIG['PATHS']['INFO_OBJ'])
+
     def spoof_single_subject(self, rm_existing=True):
         """
         Combine all subject data into single file, and continue analysis
@@ -227,7 +231,7 @@ class DecodingManager:
             for i, res in enumerate(results_dict.values()):
                 results_mat[i] = res
             
-            f = CONFIG['PATHS']['SAVE'] / 'GAT_results.npy'
+            f = CONFIG['PATHS']['RESULTS']['GAT_RESULTS']
             with open(f, 'wb') as f_:
                 np.save(f_, results_mat)
 
@@ -252,7 +256,7 @@ class DecodingManager:
         # p-value calculation with FDR correction
         logger.info("Calculating p-values")
 
-        with open(CONFIG['PATHS']['SAVE'] / 'GAT_results.npy', 'rb') as f:
+        with open(CONFIG['PATHS']['RESULTS']['GAT_RESULTS'], 'rb') as f:
             scores = np.load(f)
         
         if len(self.subjects) > 1:
@@ -261,7 +265,7 @@ class DecodingManager:
                                                     tfce=False) # use FDR instead of TFCE
 
             # store p-values
-            f = CONFIG['PATHS']['SAVE'] / 'GAT_pvalues.npy'
+            f = CONFIG['PATHS']['RESULTS']['GAT_PVALUES']
             with open(f, 'wb') as tmp:
                 np.save(tmp, p_values)
                 logger.debug(f"Wrote GAT p-values to {tmp.name}")
@@ -350,7 +354,7 @@ class DecodingManager:
             with open(subject.temporal_scores, 'rb') as tmp:
                 scores[i] = np.load(tmp)
 
-        f = CONFIG['PATHS']['SAVE'] / 'Temporal_Scores.npy'
+        f = CONFIG['PATHS']['RESULTS']['TEMPORAL_SCORES']
         with open(f, 'wb') as tmp:
             np.save(tmp, scores)
             logger.debug(f"Wrote aggregated temporal scores to {tmp.name}")
@@ -364,7 +368,7 @@ class DecodingManager:
         # calculate and store grand average
         grand_average = mne.grand_average(evokeds)
 
-        f = CONFIG['PATHS']['SAVE'] / 'Temporal_Grand_Avg.npy'
+        f = CONFIG['PATHS']['RESULTS']['TEMPORAL_GRAND_AVG']
         with open(f, 'wb') as tmp:
             np.save(tmp, grand_average)
             logger.debug(f"Wrote temporal pattern grand avg to {tmp.name}")
@@ -404,27 +408,10 @@ class DecodingManager:
                           ):
         """
         Same as temporal decoding, but using time points as features, channels as samples.
+        Difference is, that this is done with one channel at a time. 
         """
         logger.debug(f"Loading file {subject.epoch}")
         data_epochs = mne.read_epochs(subject.epoch)
-
-        pipeline = sklearn.pipeline.make_pipeline(
-                                                #   mne.decoding.Vectorizer(),
-                                                  sklearn.preprocessing.StandardScaler(),
-                                                  mne.decoding.LinearModel(self._get_model_object(model))
-                                                  )
-
-        estimator = mne.decoding.SlidingEstimator(pipeline,
-                                                  n_jobs=n_jobs,
-                                                  scoring=scoring,
-                                                  verbose=logger.level
-                                                  )
-
-        # TODO: 1 event seems to get dropped here
-        data_matrix = data_epochs.get_data(picks='data') # pick only good EEG channels
-
-        # now for the big trick: transpose channel and time dimensions!
-        data_matrix = data_matrix.transpose((0,2,1))
 
         # produce labels based on user-indicated condition/marker mapping
         labels = np.empty(shape=(len(data_epochs.events[:,-1])), dtype=object)
@@ -432,22 +419,75 @@ class DecodingManager:
             for marker in markers:
                 labels[data_epochs.events[:,-1] == marker] = cond
 
-        logger.info("Performing fitting")
-        
-        scores = mne.decoding.cross_val_multiscore(estimator,
-                                                   data_matrix,
-                                                   labels,
-                                                   cv=cv_folds,
-                                                   n_jobs=n_jobs
-                                                   )
+        # predefined scores array, shape (n_channels, k_folds, n_times)
+        scores = np.empty(shape=(len(data_epochs.pick('data').ch_names), cv_folds, len(data_epochs.times)))
 
+        logger.info("Performing fitting")
+
+        # we're doing this for every channel (yes, it's somewhat hacky)
+        # for plotting purposes, we also want this in a specific order, 
+        for i, channel in enumerate(data_epochs.pick('data').ch_names):
+            # but there's no guarantee every electrode is present in the data
+            try:
+                # TODO: 1 event seems to get dropped here
+                data_matrix = data_epochs.get_data(picks=channel) # pick only this channel's data
+            except ValueError:
+                # channel is not present in the data, skip
+                continue
+
+            pipeline = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(),
+                                                      mne.decoding.LinearModel(self._get_model_object(model))
+                                                      )
+
+            estimator = mne.decoding.SlidingEstimator(pipeline,
+                                                      n_jobs=n_jobs,
+                                                      scoring=scoring,
+                                                      verbose=logger.level
+                                                      )
+
+            scores[i] = mne.decoding.cross_val_multiscore(estimator,
+                                                          data_matrix,
+                                                          labels,
+                                                          cv=cv_folds,
+                                                          n_jobs=n_jobs
+                                                          )
+            
         # store results in temp folder, to be imported later
         with open(subject.channel_scores, 'wb') as tmp:
             np.save(tmp, scores)
             logger.debug(f"Wrote cross validation scores to {tmp.name}")
 
-        def _aggregate_channel_scores(self,):
-            pass
+    def _aggregate_channel_scores(self,):
+        # get first subject's scores as template for array size
+        with open(self.subjects[0].channel_scores, 'rb') as tmp:
+            scores = np.load(tmp)
 
-        def run_all_channel_decoding(self,):
-            pass
+        # insert dimension for multiple subjects
+        scores.resize((len(self.subjects), *scores.shape))
+
+        # read remaining subject scores
+        for i, subject in enumerate(self.subjects[1:], start=1):
+            with open(subject.channel_scores, 'rb') as tmp:
+                scores[i] = np.load(tmp)
+
+        f = CONFIG['PATHS']['RESULTS']['CHANNEL_SCORES']
+        with open(f, 'wb') as tmp:
+            np.save(tmp, scores)
+            logger.debug(f"Wrote aggregated channel scores to {tmp.name}")
+
+    def run_all_channel_decoding(self, rm_existing=True):
+        # remove existing -channel_* files from tmp directory
+        if rm_existing:
+            # remove existing scoring files from directory
+            for f_ in CONFIG['PATHS']['TMP'].glob('*-channel_scores.npy'):# FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
+                if f_.is_file(): f_.unlink()
+                else: raise Exception(f"Please do not alter contents of {CONFIG['PATHS']['TMP']}")
+
+        # run channel decoding for each subject individually
+        for i, subject in enumerate(self.subjects, start=1):
+            logger.info(f"Fitting channel decoding for subject {i}/{len(self.subjects)}")
+            self._channel_decoding(subject)
+        
+        # aggregate and save results
+        logger.debug("Consolidating results")
+        self._aggregate_channel_scores()
