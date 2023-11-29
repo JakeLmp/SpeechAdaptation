@@ -334,8 +334,17 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
     f = CONFIG['PATHS']['RESULTS']['CHANNEL_SCORES']
     with open(f, 'rb') as tmp:
         channel_results = np.load(tmp)
+    
+    f = CONFIG['PATHS']['INFO_OBJ']
+    # with open(f, 'rb') as tmp:
+    #     info = mne.io.read_info(tmp)
+    info = mne.io.read_info(f)
 
-    fig, ax = ChannelScoresMatrix(channel_results.mean(2), 
+    # make channel plotting order
+    channel_labels = set(CONFIG['DEFAULT']['CHANNEL_ORDER']) & set([ch['ch_name'] for ch in info['chs']])
+
+    fig, ax = ChannelScoresMatrix(channel_results.mean(2),
+                                  channel_labels=channel_labels,
                                   times_limits=(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']),
                                   score_method=CONFIG['DECODING']['SCORING'],
                                   )
