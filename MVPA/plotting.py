@@ -207,7 +207,8 @@ def GeneralizationDiagonal(scores_matrix, times_limits, score_method, p_values=N
 
     return fig, ax
 
-def ChannelScoresMatrix(scores_matrix, channel_labels, times_limits, score_method, imshow_kwargs={}):
+def ChannelScoresMatrix(scores_matrix, channel_labels, times_limits, score_method, 
+                        p_values=None, p_value_threshold=0.05, imshow_kwargs={}):
     """_summary_
 
     Args:
@@ -222,6 +223,12 @@ def ChannelScoresMatrix(scores_matrix, channel_labels, times_limits, score_metho
             (t_start, t_end) the start and end times of the x axis
         score_method (str): 
             scoring method used in calculating the decoder scores
+        p_values (numpy ndarray):
+            Default None, else a numpy ndarray of shape (n_channels, n_times) 
+            containing p-values to be used in plotting a 
+            significance contour
+        p_value_threshold (float):
+            Default 0.05, p-value threshold value to use in masking
         imshow_kwargs (dict): 
             keyword arguments to be passed to matplotlib.pyplot.imshow
             Defaults to {}.
@@ -235,14 +242,40 @@ def ChannelScoresMatrix(scores_matrix, channel_labels, times_limits, score_metho
 
     # we need the mean over subjects
     data = scores_matrix.mean(0)
+
+    # create mask for significant area
+    if isinstance(p_values, np.ndarray):
+        mask = p_values < p_value_threshold
+    # if no p-values, everything is significant
+    else:
+        mask = np.ones_like(data, dtype='int')
     
     fig, ax = plt.subplots(1, 1)
 
+    # create alpha value array, where non-significant elements get lower alpha
+    alpha = np.ones_like(data, dtype='float32')
+    alpha[~mask] = 0.5
+
     im = ax.imshow(
         data,
+        alpha=alpha,
         extent=(*times_limits, *times_limits),
         **kwargs
     )
+
+    # we draw contour lines around significant areas (if p_values is given)
+    if isinstance(p_values, np.ndarray):
+        # matplotlib requires weird coordinate formats, this complies to that.
+        x = np.linspace(*times_limits, data.shape[0])
+        y = np.linspace(*times_limits, data.shape[1])
+        x, y = np.meshgrid(x, y)
+        
+        ax.contour(x, y, mask, 
+                   levels=[0.5],
+                   linewidths=[1],
+                   colors=['k'],
+                   corner_mask=False,
+                  )
 
     # y-axis tick positions
     pos = np.linspace(*times_limits, len(channel_labels))
@@ -334,9 +367,14 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
     with open(f, 'rb') as tmp:
         channel_results = np.load(tmp)
     
+    if not spoofed_subject:
+        f = CONFIG['PATHS']['RESULTS']['CHANNEL_PVALUES']
+        with open(f, 'rb') as tmp:
+            channel_pvalues = np.load(tmp)
+    else:
+        channel_pvalues = None
+
     f = CONFIG['PATHS']['INFO_OBJ']
-    # with open(f, 'rb') as tmp:
-    #     info = mne.io.read_info(tmp)
     info = mne.io.read_info(f)
 
     # make channel plotting order
@@ -345,6 +383,8 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
 
     # reordering matrix according to plotting order
     channel_results = channel_results[:, list(channel_labels.values()), ...]
+    if not spoofed_subject:
+        channel_pvalues = channel_pvalues[list(channel_labels.values()), ...]
 
     fig, ax = ChannelScoresMatrix(channel_results.mean(2),
                                   channel_labels=list(channel_labels.keys()),

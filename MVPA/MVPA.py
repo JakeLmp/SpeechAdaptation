@@ -258,13 +258,13 @@ class DecodingManager:
         logger.debug("Consolidating GAT results")
         self._aggregate_gat_results()
 
-        # p-value calculation with FDR correction
-        logger.info("Calculating p-values")
-
-        with open(CONFIG['PATHS']['RESULTS']['GAT_RESULTS'], 'rb') as f:
-            scores = np.load(f)
-        
         if len(self.subjects) > 1:
+            # p-value calculation with FDR correction
+            logger.info("Calculating p-values")
+
+            with open(CONFIG['PATHS']['RESULTS']['GAT_RESULTS'], 'rb') as f:
+                scores = np.load(f)
+        
             p_values = MVPA.stat_utils.get_p_scores(scores.mean(1), # use average of folds
                                                     chance= 1/len(CONFIG['CONDITION_STIMULI']), # 1/no_of_conditions
                                                     tfce=False) # use FDR instead of TFCE
@@ -490,3 +490,20 @@ class DecodingManager:
         # aggregate and save results
         logger.debug("Consolidating results")
         self._aggregate_channel_scores()
+
+        if len(self.subjects) > 1:
+            # p-value calculation with FDR correction
+            logger.info("Calculating p-values")
+
+            with open(CONFIG['PATHS']['RESULTS']['CHANNEL_SCORES'], 'rb') as f:
+                scores = np.load(f)
+        
+            p_values = MVPA.stat_utils.get_p_scores(scores.mean(2), # use average of folds
+                                                    chance= 1/len(CONFIG['CONDITION_STIMULI']), # 1/no_of_conditions
+                                                    tfce=False) # use FDR instead of TFCE
+
+            # store p-values
+            f = CONFIG['PATHS']['RESULTS']['CHANNEL_PVALUES']
+            with open(f, 'wb') as tmp:
+                np.save(tmp, p_values)
+                logger.debug(f"Wrote channel p-values to {tmp.name}")
