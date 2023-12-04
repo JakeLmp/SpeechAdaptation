@@ -201,7 +201,7 @@ def GeneralizationDiagonal(scores_matrix, times_limits, score_method, p_values=N
                     solid_capstyle='round'
                     )
 
-    ax.set_title('Diagonal of GAT matrix')
+    ax.set_title('Decoding Score over Time')
     ax.set_xlabel('Time (s)')
     ax.set_ylabel(score_method)
 
@@ -228,7 +228,6 @@ def ChannelScoresMatrix(scores_matrix, channel_labels, times_limits, score_metho
     """
     
     kwargs = dict(interpolation = "lanczos",
-                  origin        = "lower",
                   cmap          = "RdBu_r"
                   )
 
@@ -249,8 +248,8 @@ def ChannelScoresMatrix(scores_matrix, channel_labels, times_limits, score_metho
     pos = np.linspace(*times_limits, len(channel_labels))
     # pos = pos + (pos[1]-pos[0])/2 # offset by half the tick distance
 
-    # stagger every other label
-    channel_labels = [ch + 8*' ' if i%2==0 else ch for i, ch in enumerate(channel_labels)]
+    # stagger every other label (order is reversed due to imshow's y-axis treatment)
+    channel_labels = [ch + 8*' ' if i%2==0 else ch for i, ch in enumerate(reversed(channel_labels))]
     ax.set_yticks(pos, channel_labels,
                   fontsize='xx-small',
                   ha='right')
@@ -341,10 +340,14 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
     info = mne.io.read_info(f)
 
     # make channel plotting order
-    channel_labels = set(CONFIG['DEFAULT']['CHANNEL_ORDER']) & set([ch['ch_name'] for ch in info['chs']])
+    data_channels = [(ch['ch_name'], idx) for idx, ch in enumerate(info['chs'])] # all channels present in data, with their index
+    channel_labels = dict([tup for ch in CONFIG['DEFAULT']['CHANNEL_ORDER'] for tup in data_channels if tup[0] == ch]) # (ch_name, idx) dict
+
+    # reordering matrix according to plotting order
+    channel_results = channel_results[:, list(channel_labels.values()), ...]
 
     fig, ax = ChannelScoresMatrix(channel_results.mean(2),
-                                  channel_labels=channel_labels,
+                                  channel_labels=list(channel_labels.keys()),
                                   times_limits=(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']),
                                   score_method=CONFIG['DECODING']['SCORING'],
                                   )

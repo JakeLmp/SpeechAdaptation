@@ -8,10 +8,13 @@ import matplotlib.pyplot as plt
 import mne
 import sklearn.pipeline, sklearn.preprocessing
 
+import tqdm
+
+# TODO: are warning filters here incompatible with mne/fixes.py (line 271) ?
 # prevent commandline output from getting cluttered by repetitive warnings
 from warnings import filterwarnings
 from sklearn.exceptions import ConvergenceWarning
-filterwarnings("once", category=ConvergenceWarning)
+# filterwarnings("once", category=ConvergenceWarning)
 
 import MVPA.utils, MVPA.stat_utils
 CONFIG = MVPA.utils.config_prep()
@@ -427,15 +430,9 @@ class DecodingManager:
         logger.info("Performing fitting")
 
         # we're doing this for every channel (yes, it's somewhat hacky)
-        # for plotting purposes, we also want this in a specific order, 
-        for i, channel in enumerate(data_epochs.pick('data').ch_names):
-            # but there's no guarantee every electrode is present in the data
-            try:
-                # TODO: 1 event seems to get dropped here
-                data_matrix = data_epochs.get_data(picks=channel) # pick only this channel's data
-            except ValueError:
-                # channel is not present in the data, skip
-                continue
+        for channel in tqdm.tqdm(data_epochs.pick('data').ch_names):
+            # TODO: 1 event seems to get dropped here
+            data_matrix = data_epochs.get_data(picks=channel) # pick only this channel's data
 
             pipeline = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(),
                                                       mne.decoding.LinearModel(self._get_model_object(model))
@@ -444,7 +441,7 @@ class DecodingManager:
             estimator = mne.decoding.SlidingEstimator(pipeline,
                                                       n_jobs=n_jobs,
                                                       scoring=scoring,
-                                                      verbose=logger.level
+                                                      verbose=logging.ERROR
                                                       )
 
             scores[i] = mne.decoding.cross_val_multiscore(estimator,
