@@ -8,13 +8,12 @@ import matplotlib.pyplot as plt
 import mne
 import sklearn.pipeline, sklearn.preprocessing
 
-import tqdm
+from tqdm import tqdm
 
-# TODO: are warning filters here incompatible with mne/fixes.py (line 271) ?
 # prevent commandline output from getting cluttered by repetitive warnings
 from warnings import filterwarnings
 from sklearn.exceptions import ConvergenceWarning
-# filterwarnings("once", category=ConvergenceWarning)
+filterwarnings("once", category=ConvergenceWarning)
 
 import MVPA.utils, MVPA.stat_utils
 CONFIG = MVPA.utils.config_prep()
@@ -430,7 +429,7 @@ class DecodingManager:
         logger.info("Performing fitting")
 
         # we're doing this for every channel (yes, it's somewhat hacky)
-        for i, channel in tqdm.tqdm(enumerate(data_epochs.pick('data').ch_names)):
+        for i, channel in tqdm(enumerate(data_epochs.pick('data').ch_names)):
             # TODO: 1 event seems to get dropped here
             data_matrix = data_epochs.get_data(picks=channel) # pick only this channel's data
 

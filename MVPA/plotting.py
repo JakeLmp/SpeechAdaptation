@@ -302,18 +302,21 @@ def ChannelAccuracyTopo():
     """
     TO DO
     """
-    fig, ax = plt.subplots(1, 1)
+    
+    pass    
+    
+    # fig, ax = plt.subplots(1, 1)
 
-    im, cn = mne.viz.plot_topomap(
-        data=scores.mean(0), 
-        pos=np.array([ch['loc'][:2] for ch in data_epochs.pick('data').info['chs']]),
-        names=[ch['ch_name'] for ch in data_epochs.pick('data').info['chs']],
-        res=1000,
-        size=3,
-        axes=ax
-        )
+    # im, cn = mne.viz.plot_topomap(
+    #     data=scores.mean(0), 
+    #     pos=np.array([ch['loc'][:2] for ch in data_epochs.pick('data').info['chs']]),
+    #     names=[ch['ch_name'] for ch in data_epochs.pick('data').info['chs']],
+    #     res=1000,
+    #     size=3,
+    #     axes=ax
+    #     )
 
-    cbar = plt.colorbar(im, ax=ax)
+    # cbar = plt.colorbar(im, ax=ax)
 
 def generate_all_plots(spoofed_subject=False, save_kwargs={}):
     logger.info("Generating plots")
@@ -395,6 +398,12 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
     fig.savefig(f, **kwargs)
     logger.debug(f"Wrote channel scores plot to {f}")
     plt.close(fig)
+
+    # butterfly w/ all channels
+    pass
+
+    # just topo
+    pass
 
 if __name__ == '__main__':
     print('THIS SCRIPT IS NOT MEANT TO BE RUN INDEPENDENTLY')
