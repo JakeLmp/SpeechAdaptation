@@ -430,7 +430,7 @@ class DecodingManager:
         logger.info("Performing fitting")
 
         # we're doing this for every channel (yes, it's somewhat hacky)
-        for channel in tqdm.tqdm(data_epochs.pick('data').ch_names):
+        for i, channel in tqdm.tqdm(enumerate(data_epochs.pick('data').ch_names)):
             # TODO: 1 event seems to get dropped here
             data_matrix = data_epochs.get_data(picks=channel) # pick only this channel's data
 
