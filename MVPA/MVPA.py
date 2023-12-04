@@ -443,12 +443,21 @@ class DecodingManager:
                                                       verbose=logging.ERROR
                                                       )
 
-            scores[i] = mne.decoding.cross_val_multiscore(estimator,
-                                                          data_matrix,
-                                                          labels,
-                                                          cv=cv_folds,
-                                                          n_jobs=n_jobs
-                                                          )
+            # bug in mne/fixes.py (in BaseEstimator.get_params) causes this to crash unpredictably
+            # catch IndexErrors, and retry (up to a max number subsequent retries)
+            err_count = 0
+            while err_count < 10:
+                try:
+                    scores[i] = mne.decoding.cross_val_multiscore(estimator,
+                                                                data_matrix,
+                                                                labels,
+                                                                cv=cv_folds,
+                                                                n_jobs=n_jobs
+                                                                )
+                except IndexError:
+                    logging.debug("Caught MNE error, retrying")
+                    continue
+                break
             
         # store results in temp folder, to be imported later
         with open(subject.channel_scores, 'wb') as tmp:
