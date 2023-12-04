@@ -17,7 +17,7 @@ def main():
 
     manager = MVPA.DecodingManager()
     manager.preprocess_all()
-    manager.spoof_single_subject()
+    # manager.spoof_single_subject()
     manager.run_all_gat()
     manager.run_all_temporal_decoding()
     manager.run_all_channel_decoding()
