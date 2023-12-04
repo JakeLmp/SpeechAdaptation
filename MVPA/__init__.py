@@ -1,7 +1,7 @@
 import logging, sys
+logging.basicConfig(level=logging.INFO,
+                    stream=sys.stdout)
 logger = logging.getLogger('MVPA')
-logger.setLevel(logging.DEBUG)
-logger.addHandler(logging.StreamHandler(stream=sys.stdout))
 
 from matplotlib.pyplot import set_loglevel;     set_loglevel('error')
 from mne import set_log_level;                  set_log_level(logging.ERROR)
