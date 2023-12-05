@@ -2,6 +2,7 @@ import logging
 logger = logging.getLogger('MVPA')
 
 import matplotlib.pyplot as plt
+import matplotlib.colors
 import numpy as np
 import scipy.stats
 import mne
@@ -11,7 +12,8 @@ import mne
 from .utils import config_prep
 CONFIG = config_prep()
 
-def GeneralizationScoreMatrix(scores_matrix, times_limits, score_method, p_values=None, p_value_threshold=0.05, imshow_kwargs={}):
+def GeneralizationScoreMatrix(scores_matrix, 
+                              p_values=None, p_value_threshold=0.05, imshow_kwargs={}):
     """
     Plot the Time-Generalised Decoding score matrix.
 
@@ -20,10 +22,6 @@ def GeneralizationScoreMatrix(scores_matrix, times_limits, score_method, p_value
             Matrix of shape (n_subjects, n_times, n_times)
             containing scores of decoders for each subject, 
             at each testing time, for each training time
-        times_limits (tuple): 
-            (t_start, t_end) the start and end times of the x axis
-        score_method (str): 
-            scoring method used in calculating the decoder scores
         p_values (numpy ndarray):
             Default None, else a numpy ndarray of shape (n_times, n_times) 
             containing p-values to be used in plotting a 
@@ -37,15 +35,22 @@ def GeneralizationScoreMatrix(scores_matrix, times_limits, score_method, p_value
         fig, ax: matplotlib Figure and Axes objects containing the plot
     """
     
+    # we need the mean over subjects
+    data = scores_matrix.mean(0)
+    
+    # determining colormap value scaling
+    chance = 1/len(CONFIG['CONDITION_STIMULI'])
+    vmax = data.max()
+    diff = abs(vmax - chance)
+    vmin = chance - diff
+
     kwargs = dict(interpolation = "lanczos",
                   origin        = "lower",
-                  cmap          = "RdBu_r"
+                  cmap          = "RdBu_r",
+                  norm          = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax),
                   )
 
     kwargs.update(imshow_kwargs)
-    
-    # we need the mean over subjects
-    data = scores_matrix.mean(0)
 
     # create mask for significant area
     if isinstance(p_values, np.ndarray):
@@ -63,15 +68,15 @@ def GeneralizationScoreMatrix(scores_matrix, times_limits, score_method, p_value
     im = ax.imshow(
         data,
         alpha=alpha,
-        extent=(*times_limits, *times_limits),
+        extent=(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']),
         **kwargs
     )
     
     # lastly, we draw contour lines around significant areas (if p_values is given)
     if isinstance(p_values, np.ndarray):
         # matplotlib requires weird coordinate formats, this complies to that.
-        x = np.linspace(*times_limits, data.shape[0])
-        y = np.linspace(*times_limits, data.shape[1])
+        x = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], data.shape[0])
+        y = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], data.shape[1])
         x, y = np.meshgrid(x, y)
         
         ax.contour(x, y, mask, 
@@ -86,9 +91,11 @@ def GeneralizationScoreMatrix(scores_matrix, times_limits, score_method, p_value
     ax.set_title("Temporal generalization")
     ax.axvline(0, color="k", linestyle=':')
     ax.axhline(0, color="k", linestyle=':')
-    ax.plot(times_limits, times_limits, color="k", linestyle=":")
+    ax.plot((CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']), 
+            (CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']), 
+            color="k", linestyle=":")
     cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label(score_method)
+    cbar.set_label(CONFIG['DECODING']['SCORING'])
 
     return fig, ax
 
@@ -121,7 +128,7 @@ def LineBandPlot(x, y, err_lower, err_upper, plot_kwargs={}):
 
     return fig, ax
 
-def GeneralizationDiagonal(scores_matrix, times_limits, score_method, p_values=None, p_value_threshold=0.05, plot_kwargs={}):
+def GeneralizationDiagonal(scores_matrix, p_values=None, p_value_threshold=0.05, plot_kwargs={}):
     """
     Plot the diagonal of the Time-Generalised Decoding score matrix.
 
@@ -130,10 +137,6 @@ def GeneralizationDiagonal(scores_matrix, times_limits, score_method, p_values=N
             Matrix of shape (n_subjects, n_times, n_times) 
             containing scores of decoders for each subject, 
             at each testing time, for each training time
-        times_limits (tuple): 
-            (t_start, t_end) the start and end times of the x axis
-        score_method (str): 
-            scoring method used in calculating the decoder scores
         p_values (numpy array):
             Default None, else a numpy ndarray of shape (n_times, n_times) 
             containing p-values to be used in plotting 
@@ -148,11 +151,6 @@ def GeneralizationDiagonal(scores_matrix, times_limits, score_method, p_values=N
         fig, ax: matplotlib Figure and Axes objects containing the plot
     """
 
-    # kwargs = {'title' : 'Decoding accuracy on GAT diagonal',
-    #           'xlabel' : 'Time (s)',
-    #           'ylabel' : score_method, 
-    #           }
-
     kwargs = dict()
 
     kwargs.update(plot_kwargs)
@@ -160,7 +158,7 @@ def GeneralizationDiagonal(scores_matrix, times_limits, score_method, p_values=N
     # we need the mean over subjects
     data = scores_matrix.mean(0)
 
-    x = np.linspace(*times_limits, data.shape[0])
+    x = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], data.shape[0])
     y = np.diagonal(data)                               # diagonal of mean over subjects
     
     # if more than 1 subject, we can calculate a confidence interval
@@ -203,26 +201,20 @@ def GeneralizationDiagonal(scores_matrix, times_limits, score_method, p_values=N
 
     ax.set_title('Decoding Score over Time')
     ax.set_xlabel('Time (s)')
-    ax.set_ylabel(score_method)
+    ax.set_ylabel(CONFIG['DECODING']['SCORING'])
 
     return fig, ax
 
-def ChannelScoresMatrix(scores_matrix, channel_labels, times_limits, score_method, 
+def ChannelScoresMatrix(scores_matrix,
                         p_values=None, p_value_threshold=0.05, imshow_kwargs={}):
-    """_summary_
+    """
+    Plot channel decoding scores over time.
 
     Args:
         scores_matrix (numpy ndarray): 
             Matrix of shape (n_subjects, n_channels, n_times)
             containing scores of decoders for each subject, 
             for each channel, at each time point
-        channel_labels (list of str):
-            List containing channel labels in the same order
-            as the corresponding axis of scores_matrix
-        times_limits (tuple): 
-            (t_start, t_end) the start and end times of the x axis
-        score_method (str): 
-            scoring method used in calculating the decoder scores
         p_values (numpy ndarray):
             Default None, else a numpy ndarray of shape (n_channels, n_times) 
             containing p-values to be used in plotting a 
@@ -232,16 +224,38 @@ def ChannelScoresMatrix(scores_matrix, channel_labels, times_limits, score_metho
         imshow_kwargs (dict): 
             keyword arguments to be passed to matplotlib.pyplot.imshow
             Defaults to {}.
-    """
     
-    kwargs = dict(interpolation = "lanczos",
-                  cmap          = "RdBu_r"
-                  )
+    Returns:
+        fig, ax: matplotlib Figure and Axes objects containing the plot
+    """
 
-    kwargs.update(imshow_kwargs)
+    f = CONFIG['PATHS']['INFO_OBJ']
+    info = mne.io.read_info(f)
+
+    # make channel plotting order
+    data_channels = [(ch['ch_name'], idx) for idx, ch in enumerate(info['chs'])] # all channels present in data, with their index
+    correct_order = dict([tup for ch in CONFIG['DEFAULT']['CHANNEL_ORDER'] for tup in data_channels if tup[0] == ch]) # (ch_name, idx) dict
+
+    # reordering matrix according to plotting order
+    scores_matrix = scores_matrix[:, list(correct_order.values()), ...]
+    if p_values is not None:
+        p_values = p_values[list(correct_order.values()), ...]
 
     # we need the mean over subjects
     data = scores_matrix.mean(0)
+
+    # determining colormap value scaling
+    chance = 1/len(CONFIG['CONDITION_STIMULI'])
+    vmax = data.max()
+    diff = abs(vmax - chance)
+    vmin = chance - diff
+
+    kwargs = dict(interpolation = "lanczos",
+                  cmap          = "RdBu_r",
+                  norm          = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax),
+                  )
+
+    kwargs.update(imshow_kwargs)
 
     # create mask for significant area
     if isinstance(p_values, np.ndarray):
@@ -259,15 +273,15 @@ def ChannelScoresMatrix(scores_matrix, channel_labels, times_limits, score_metho
     im = ax.imshow(
         data,
         alpha=alpha,
-        extent=(*times_limits, *times_limits),
+        extent=(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']),
         **kwargs
     )
 
     # we draw contour lines around significant areas (if p_values is given)
     if isinstance(p_values, np.ndarray):
         # matplotlib requires weird coordinate formats, this complies to that.
-        x = np.linspace(*times_limits, data.shape[0])
-        y = np.linspace(*times_limits, data.shape[1])
+        x = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], data.shape[0])
+        y = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], data.shape[1])
         x, y = np.meshgrid(x, y)
         
         ax.contour(x, y, mask, 
@@ -278,11 +292,11 @@ def ChannelScoresMatrix(scores_matrix, channel_labels, times_limits, score_metho
                   )
 
     # y-axis tick positions
-    pos = np.linspace(*times_limits, len(channel_labels))
+    pos = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], len(correct_order))
     # pos = pos + (pos[1]-pos[0])/2 # offset by half the tick distance
 
     # stagger every other label (order is reversed due to imshow's y-axis treatment)
-    channel_labels = [ch + 8*' ' if i%2==0 else ch for i, ch in enumerate(reversed(channel_labels))]
+    channel_labels = [ch + 8*' ' if i%2==0 else ch for i, ch in enumerate(reversed(correct_order.keys()))]
     ax.set_yticks(pos, channel_labels,
                   fontsize='xx-small',
                   ha='right')
@@ -293,30 +307,88 @@ def ChannelScoresMatrix(scores_matrix, channel_labels, times_limits, score_metho
     ax.axvline(0, color="k", linestyle=':')
 
     cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label(score_method)
+    cbar.set_label(CONFIG['DECODING']['SCORING'])
 
     return fig, ax
 
 
-def ChannelAccuracyTopo():
+def ChannelScoresTopomap(scores_matrix, tvals, 
+                         plot_kwargs={}):
     """
-    TO DO
+    Plot channel decoding scores as a topomap.
+
+    Args:
+        scores_matrix (numpy ndarray): 
+            Matrix of shape (n_subjects, n_channels, n_times)
+            containing scores of decoders for each subject, 
+            for each channel, at each time point
+        tvals (float | tuple):
+            time point to plot or the start and end times (t_start, t_end)
+            of the interval to average over
+        plot_kwargs (dict): 
+            keyword arguments to be passed to mne.viz.plot_topomap
+            Defaults to {}.
+    
+    Returns:
+        fig, ax: matplotlib Figure and Axes objects containing the plot
     """
     
-    pass    
+    f = CONFIG['PATHS']['INFO_OBJ']
+    info = mne.io.read_info(f)
+
+    # --- creating evoked object from array + info
+    # create dummy electrode arrays for non-data channels
+    shape = list(scores_matrix.shape)
+    shape[1] = len(info['chs']) - scores_matrix.shape[1]
+    dummy_electrodes = np.zeros(shape=shape)
+
+    # append along channel axis
+    data_array = np.append(scores_matrix, dummy_electrodes, axis=1)
+
+    # make the evoked object (we only need data channels)
+    evoked = mne.EvokedArray(data_array.mean(0), info, tmin=CONFIG['MNE']['T_MIN']).pick('data')
+
+    # --- plotting
+    if isinstance(tvals, float):
+        # just use first time point, after getting from tmin onwards
+        data = evoked.get_data(tmin=tvals)[:,0]
+    elif len(tvals) == 2:
+        # get average score over interval
+        data = evoked.get_data(tmin=tvals[0], tmax=tvals[1]).mean(1)
     
-    # fig, ax = plt.subplots(1, 1)
+    # get channel locations from info object
+    pos = np.array([ch['loc'][:2] for ch in evoked.info['chs']])
 
-    # im, cn = mne.viz.plot_topomap(
-    #     data=scores.mean(0), 
-    #     pos=np.array([ch['loc'][:2] for ch in data_epochs.pick('data').info['chs']]),
-    #     names=[ch['ch_name'] for ch in data_epochs.pick('data').info['chs']],
-    #     res=1000,
-    #     size=3,
-    #     axes=ax
-    #     )
+    # determining colormap value scaling
+    chance = 1/len(CONFIG['CONDITION_STIMULI'])
+    vmax = data.max()
+    diff = abs(vmax - chance)
+    vmin = chance - diff
+    
+    kwargs = dict(
+        cmap='RdBu_r',
+        cnorm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax),
+        names=evoked.ch_names,
+    )
 
-    # cbar = plt.colorbar(im, ax=ax)
+    kwargs.update(plot_kwargs)
+
+    fig, ax = plt.subplots(1, 1)
+
+    im, cn = mne.viz.plot_topomap(
+        data=data,
+        pos=pos,
+        axes=ax,
+        show=False,
+        **kwargs
+    )
+
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label(CONFIG['DECODING']['SCORING'])
+
+    plt.tight_layout()
+
+    return fig, ax
 
 def generate_all_plots(spoofed_subject=False, save_kwargs={}):
     logger.info("Generating plots")
@@ -339,8 +411,6 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
         GAT_pvalues = None
     
     fig, ax = GeneralizationScoreMatrix(GAT_results.mean(1), 
-                                        times_limits=(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']),
-                                        score_method=CONFIG['DECODING']['SCORING'],
                                         p_values=GAT_pvalues,
                                         p_value_threshold=0.05
                                         )
@@ -350,8 +420,6 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
     plt.close(fig)
     
     fig, ax = GeneralizationDiagonal(GAT_results.mean(1), 
-                                     times_limits=(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']),
-                                     score_method=CONFIG['DECODING']['SCORING'],
                                      p_values=GAT_pvalues,
                                      p_value_threshold=[0.05,0.01]
                                      )
@@ -377,33 +445,26 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
     else:
         channel_pvalues = None
 
-    f = CONFIG['PATHS']['INFO_OBJ']
-    info = mne.io.read_info(f)
-
-    # make channel plotting order
-    data_channels = [(ch['ch_name'], idx) for idx, ch in enumerate(info['chs'])] # all channels present in data, with their index
-    channel_labels = dict([tup for ch in CONFIG['DEFAULT']['CHANNEL_ORDER'] for tup in data_channels if tup[0] == ch]) # (ch_name, idx) dict
-
-    # reordering matrix according to plotting order
-    channel_results = channel_results[:, list(channel_labels.values()), ...]
-    if not spoofed_subject:
-        channel_pvalues = channel_pvalues[list(channel_labels.values()), ...]
-
     fig, ax = ChannelScoresMatrix(channel_results.mean(2),
-                                  channel_labels=list(channel_labels.keys()),
-                                  times_limits=(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']),
-                                  score_method=CONFIG['DECODING']['SCORING'],
+                                #   p_values=channel_pvalues,
+                                #   p_value_threshold=0.05
                                   )
     f = CONFIG['PATHS']['PLOT'] / 'channel_scores.png'
     fig.savefig(f, **kwargs)
     logger.debug(f"Wrote channel scores plot to {f}")
     plt.close(fig)
 
-    # butterfly w/ all channels
+    # --- channel plots --- butterfly w/ all channels
     pass
 
-    # just topo
-    pass
+    # --- channel plots --- just topo
+    fig, ax = ChannelScoresTopomap(channel_results.mean(2),
+                                   tvals=(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']),
+                                   )
+    f = CONFIG['PATHS']['PLOT'] / 'channel_scores_topomap.png'
+    fig.savefig(f, **kwargs)
+    logger.debug(f"Wrote channel scores topomap plot to {f}")
+    plt.close(fig)
 
 if __name__ == '__main__':
     print('THIS SCRIPT IS NOT MEANT TO BE RUN INDEPENDENTLY')
