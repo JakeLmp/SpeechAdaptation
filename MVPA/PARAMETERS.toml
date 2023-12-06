@@ -4,10 +4,10 @@ CHANNEL_ORDER = ['Fp2','Fpz','Fp1','AF8','AF4','AFz','AF3','AF7','F8','F6','F4',
 
 [PATHS]
 # location of data file(s), may be a single file or a directory containing multiple files
-DATA = "C:\\Users\\Jakob\\Documents\\repositories\\SpeechAdaptation\\data\\test data"
+DATA = "path\\to\\your\\data"
 
 # directory where results should be stored (directory, NOT a file)
-SAVE = "C:\\Users\\Jakob\\Documents\\repositories\\SpeechAdaptation\\results"
+SAVE = "path\\to\\results\\directory"
 
 [CONDITION_STIMULI]
 # add one line for each condition in the following format:
