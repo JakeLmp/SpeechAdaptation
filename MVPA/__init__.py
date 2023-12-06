@@ -1,6 +1,8 @@
 import logging, sys
 logging.basicConfig(level=logging.WARNING,
                     stream=sys.stdout)
+logging.basicConfig(level=logging.INFO,
+                    stream=sys.stdout)
 logger = logging.getLogger('MVPA')
 
 logging.getLogger('matplotlib').setLevel(logging.ERROR)

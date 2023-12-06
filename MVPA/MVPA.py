@@ -449,11 +449,11 @@ class DecodingManager:
             while err_count < 10:
                 try:
                     scores[i] = mne.decoding.cross_val_multiscore(estimator,
-                                                                  data_matrix,
-                                                                  labels,
-                                                                  cv=cv_folds,
-                                                                  n_jobs=n_jobs
-                                                                  )
+                                                                data_matrix,
+                                                                labels,
+                                                                cv=cv_folds,
+                                                                n_jobs=n_jobs
+                                                                )
                 except IndexError:
                     logging.debug("Caught MNE error, retrying")
                     continue
