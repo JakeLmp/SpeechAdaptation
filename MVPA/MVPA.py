@@ -231,6 +231,9 @@ class DecodingManager:
             for marker in markers:
                 labels[data_epochs.events[:,-1] == marker] = cond
 
+        # labels should be encoded to facilitate all models
+        labels = sklearn.preprocessing.LabelEncoder().fit_transform(labels)
+
         # run fitting/cross validation
         logger.info("Performing fitting and cross-validation")
         scores = mne.decoding.cross_val_multiscore(generalizer,
@@ -343,6 +346,9 @@ class DecodingManager:
             for marker in markers:
                 labels[data_epochs.events[:,-1] == marker] = cond
 
+        # labels should be encoded to facilitate all models
+        labels = sklearn.preprocessing.LabelEncoder().fit_transform(labels)
+
         logger.info("Performing fitting")
         
         # --- First obtaining the scores
@@ -450,6 +456,9 @@ class DecodingManager:
         for cond, markers in CONFIG['CONDITION_STIMULI'].items():
             for marker in markers:
                 labels[data_epochs.events[:,-1] == marker] = cond
+
+        # labels should be encoded to facilitate all models
+        labels = sklearn.preprocessing.LabelEncoder().fit_transform(labels)
 
         # predefined scores array, shape (n_channels, k_folds, n_times)
         scores = np.empty(shape=(len(data_epochs.pick('data').ch_names), cv_folds, len(data_epochs.times)))
