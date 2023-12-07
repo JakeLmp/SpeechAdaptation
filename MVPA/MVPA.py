@@ -89,22 +89,39 @@ class DecodingManager:
             t_ = data_epochs.info['sfreq']
             data_epochs.resample(CONFIG['MNE']['RESAMPLE']['FREQUENCY'])
             logger.debug(f"Succesfully resampled EPOCH data (was {t_} Hz, is now {data_epochs.info['sfreq']} Hz)")
-
-        # ERP plot as reference check for successful data import/conversion
-        data_epochs.average(picks=CONFIG['MNE']['ELECTRODES']['ERP_CHECK'] if len(CONFIG['MNE']['ELECTRODES']['ERP_CHECK']) > 0 else None) \
-                .plot() \
-                .savefig(subject.png('ERP'), dpi=300)
-        plt.close()
         
         # store files in tmp folder
         logger.debug(f"Storing processed data at {subject.epoch}")
         data_epochs.save(subject.epoch)
+        
+        # store subject evoked as well (all conditions bunched together)
+        evoked = data_epochs.average(picks=CONFIG['MNE']['ELECTRODES']['ERP_CHECK'] if len(CONFIG['MNE']['ELECTRODES']['ERP_CHECK']) > 0 else None)
+        evoked.save(subject.evoked)
+
+        # ERP plot as reference check for successful data import/conversion
+        evoked.plot() \
+              .savefig(subject.png('ERP'), dpi=300)
+        plt.close()
+
+    def _grand_avg(self,):
+        # read subject evokeds
+        evokeds = []
+        for subject in self.subjects:
+            evokeds.extend(mne.read_evokeds(subject.evoked))
+        
+        # calculate and return grand average
+        return mne.grand_average(evokeds)
 
     def preprocess_all(self, rm_existing=True):
         # remove existing epoch files from tmp directory
         if rm_existing:
             # remove existing epoch files from directory
             for f_ in CONFIG['PATHS']['TMP'].glob('*-epo.fif'): # FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
+                if f_.is_file(): f_.unlink()
+                else: raise Exception(f"Please do not alter contents of {CONFIG['PATHS']['TMP']}")
+
+            # remove existing evoked files from directory
+            for f_ in CONFIG['PATHS']['TMP'].glob('*_processed-ave.fif'): # FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
                 if f_.is_file(): f_.unlink()
                 else: raise Exception(f"Please do not alter contents of {CONFIG['PATHS']['TMP']}")
 
@@ -116,6 +133,18 @@ class DecodingManager:
         # store info object of first subject for easy later use
         mne.read_epochs(self.subjects[0].epoch) \
            .info.save(CONFIG['PATHS']['INFO_OBJ'])
+        
+        # calculate, plot and store grand average (all conditions bunched together)
+        grand_average = self._grand_avg()
+
+        f = CONFIG['PATHS']['PLOT'] / 'grand_avg.png'
+        grand_average.plot(picks=CONFIG['MNE']['ELECTRODES']['ERP_CHECK'] if len(CONFIG['MNE']['ELECTRODES']['ERP_CHECK']) > 0 else None) \
+                     .savefig(f, dpi=300)
+        plt.close()
+        logger.debug(f"Wrote grand avg plot to {f}")
+
+        f = CONFIG['PATHS']['RESULTS']['GRAND_AVG']
+        grand_average.save(f, overwrite=True)
 
     def spoof_single_subject(self, rm_existing=True):
         """
@@ -373,9 +402,8 @@ class DecodingManager:
         grand_average = mne.grand_average(evokeds)
 
         f = CONFIG['PATHS']['RESULTS']['TEMPORAL_GRAND_AVG']
-        with open(f, 'wb') as tmp:
-            np.save(tmp, grand_average)
-            logger.debug(f"Wrote temporal pattern grand avg to {tmp.name}")
+        grand_average.save(f, overwrite=True)
+        logger.debug(f"Wrote temporal pattern grand avg to {f}")
 
     def run_all_temporal_decoding(self, rm_existing=True):
         # remove existing -temporal_* files from tmp directory

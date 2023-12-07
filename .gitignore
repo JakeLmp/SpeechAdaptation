@@ -7,6 +7,8 @@ __pycache__/
 # misc
 data/
 results/
+results_test/
+results_spoof/
 reference_code/
 testing.py
 error.txt

@@ -34,10 +34,11 @@ def config_prep(config_file: str | pathlib.Path = pathlib.Path("MVPA/PARAMETERS.
 
     # aggregate result files
     config_['PATHS']['RESULTS'] = {}
+    config_['PATHS']['RESULTS']['GRAND_AVG'] = config_['PATHS']['SAVE'] / 'grand_avg-ave.fif'
     config_['PATHS']['RESULTS']['GAT_RESULTS'] = config_['PATHS']['SAVE'] / 'GAT_results.npy'
     config_['PATHS']['RESULTS']['GAT_PVALUES'] = config_['PATHS']['SAVE'] / 'GAT_pvalues.npy'
     config_['PATHS']['RESULTS']['TEMPORAL_SCORES'] = config_['PATHS']['SAVE'] / 'temporal_scores.npy'
-    config_['PATHS']['RESULTS']['TEMPORAL_GRAND_AVG'] = config_['PATHS']['SAVE'] / 'temporal_grand_avg.npy'
+    config_['PATHS']['RESULTS']['TEMPORAL_GRAND_AVG'] = config_['PATHS']['SAVE'] / 'temporal_grand_avg-ave.fif'
     config_['PATHS']['RESULTS']['CHANNEL_SCORES'] = config_['PATHS']['SAVE'] / 'channel_scores.npy'
     config_['PATHS']['RESULTS']['CHANNEL_PVALUES'] = config_['PATHS']['SAVE'] / 'channel_pvalues.npy'
     
@@ -90,6 +91,10 @@ class SubjectFiles:
     @property
     def epoch(self) -> pathlib.Path:
         return self.tmp / (self.stem + '-epo.fif')
+    
+    @property
+    def evoked(self) -> pathlib.Path:
+        return self.tmp / (self.stem + '_processed-ave.fif')
     
     @property
     def gat(self) -> pathlib.Path:
