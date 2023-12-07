@@ -128,7 +128,8 @@ def LineBandPlot(x, y, err_lower, err_upper, plot_kwargs={}):
 
     return fig, ax
 
-def GeneralizationDiagonal(scores_matrix, p_values=None, p_value_threshold=0.05, plot_kwargs={}):
+def GeneralizationDiagonal(scores_matrix, 
+                           p_values=None, p_value_threshold=0.05, plot_kwargs={}):
     """
     Plot the diagonal of the Time-Generalised Decoding score matrix.
 
@@ -159,7 +160,7 @@ def GeneralizationDiagonal(scores_matrix, p_values=None, p_value_threshold=0.05,
     data = scores_matrix.mean(0)
 
     x = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], data.shape[0])
-    y = np.diagonal(data)                               # diagonal of mean over subjects
+    y = np.diagonal(data)    # diagonal of mean over subjects
     
     # if more than 1 subject, we can calculate a confidence interval
     if scores_matrix.shape[0] > 1:
@@ -202,6 +203,144 @@ def GeneralizationDiagonal(scores_matrix, p_values=None, p_value_threshold=0.05,
     ax.set_title('Decoding Score over Time')
     ax.set_xlabel('Time (s)')
     ax.set_ylabel(CONFIG['DECODING']['SCORING'])
+
+    return fig, ax
+
+def TemporalScore(scores_matrix,
+                  p_values=None, p_value_threshold=0.05, plot_kwargs={}):
+    """
+    Plot the decoding score over time.
+
+    Args:
+        scores_matrix (numpy array): 
+            Matrix of shape (n_subjects, n_times) 
+            containing scores of decoders for each subject, 
+            at each testing time, for each training time
+        p_values (numpy array):
+            Default None, else a numpy ndarray of length (n_times) 
+            containing p-values to be used in plotting 
+            significance indicators
+        p_value_threshold (float | list of floats):
+            Default 0.05, float or list of floats containing
+            values to be used for significance level indication
+        plot_kwargs (dict): 
+            keyword arguments to be passed to matplotlib.pyplot.plot
+
+    Returns:
+        fig, ax: matplotlib Figure and Axes objects containing the plot
+    """
+    
+    kwargs = dict()
+
+    kwargs.update(plot_kwargs)
+
+    # we need the mean over subjects
+    data = scores_matrix.mean(0)
+
+    x = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], data.shape[0])
+    y = data
+
+    # if more than 1 subject, we can calculate a confidence interval
+    if scores_matrix.shape[0] > 1:
+        res = scipy.stats.bootstrap((scores_matrix,), np.mean, axis=0,  
+                                    confidence_level=0.95,
+                                    n_resamples=1000
+                                    )
+        ci_l, ci_u = res.confidence_interval    # lower and upper bound of 95% conf. int. of mean
+    else: # use a band of width 0
+        ci_l, ci_u = y.copy(), y.copy()
+
+    fig, ax = LineBandPlot(x, y, ci_l, ci_u, plot_kwargs=kwargs)
+
+    # now for the significance indicator lines (if p_values is given)
+    if isinstance(p_values, np.ndarray):
+        # if not iterable already, make it so
+        try:
+            _ = iter(p_value_threshold)
+        except TypeError:
+            p_value_threshold = [p_value_threshold]
+        
+        # descending order
+        p_value_threshold = np.flip(np.sort(p_value_threshold))
+
+        # putting height of significance indicators at 1/8th of the plot
+        lims = ax.get_ylim()
+        sign_y = lims[0] + (lims[1] - lims[0])/8
+
+        # plot significance indicators
+        for i, p in enumerate(p_value_threshold, start=1):
+            intervals = np.ma.masked_where(~(p_values < p), x) # transparent where significant
+            ax.plot(intervals, np.full_like(intervals, fill_value=sign_y), 
+                    linewidth = i*3, # increasing thickness for increasing significance
+                    color='k',
+                    solid_capstyle='round'
+                    )
+
+    ax.set_title('Decoding Score over Time')
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel(CONFIG['DECODING']['SCORING'])
+
+    return fig, ax
+
+def TemporalModelPatterns(evoked, tvals,
+                          plot_kwargs={}):
+    """
+    Plot the model patterns as described in 
+    
+    Haufe, S., Meinecke, F., Görgen, K., Dähne, S., Haynes, J.-D., Blankertz, B., & Bießmann, F. (2014). 
+    On the interpretation of weight vectors of linear models in multivariate neuroimaging. 
+    NeuroImage, 87, 96–110. https://doi.org/10.1016/j.neuroimage.2013.10.067
+
+    See https://mne.tools/stable/auto_examples/decoding/linear_model_patterns.html
+    for implementational details.
+
+    Args:
+        evoked (mne.Evoked): 
+            mne.Evoked object containing transformed patterns.
+        tvals (float | tuple):
+            time point to plot, or the start and end times (t_start, t_end)
+            of the interval to average over
+        plot_kwargs (dict): 
+            keyword arguments to be passed to mne.viz.plot_topomap
+            Defaults to {}.
+    Returns:
+        fig, ax: matplotlib Figure and Axes objects containing the plot
+    """
+    if isinstance(tvals, float):
+        # just use first time point, after getting from tmin onwards
+        data = evoked.get_data(tmin=tvals)[:,0]
+    elif len(tvals) == 2:
+        # get average score over interval
+        data = evoked.get_data(tmin=tvals[0], tmax=tvals[1]).mean(1)
+
+    # get channel locations from info object
+    pos = np.array([ch['loc'][:2] for ch in evoked.info['chs']])
+
+    # determining colormap value scaling
+    scale = np.abs(data).max()
+
+    kwargs = dict(
+        cmap='RdBu_r',
+        cnorm = matplotlib.colors.Normalize(vmin=-scale, vmax=scale),
+        names=evoked.ch_names,
+    )
+
+    kwargs.update(plot_kwargs)
+
+    fig, ax = plt.subplots(1, 1)
+
+    im, cn = mne.viz.plot_topomap(
+        data=data,
+        pos=pos,
+        axes=ax,
+        show=False,
+        **kwargs
+    )
+
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label(r"µV")
+
+    plt.tight_layout()
 
     return fig, ax
 
@@ -284,12 +423,12 @@ def ChannelScoresMatrix(scores_matrix,
         y = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], data.shape[1])
         x, y = np.meshgrid(x, y)
         
-        ax.contour(x, y, mask, 
-                   levels=[0.5],
-                   linewidths=[1],
-                   colors=['k'],
-                   corner_mask=False,
-                  )
+        # ax.contour(x, y, mask, 
+        #            levels=[0.5],
+        #            linewidths=[1],
+        #            colors=['k'],
+        #            corner_mask=False,
+        #           )
 
     # y-axis tick positions
     pos = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], len(correct_order))
@@ -311,7 +450,6 @@ def ChannelScoresMatrix(scores_matrix,
 
     return fig, ax
 
-
 def ChannelScoresTopomap(scores_matrix, tvals, 
                          plot_kwargs={}):
     """
@@ -323,7 +461,7 @@ def ChannelScoresTopomap(scores_matrix, tvals,
             containing scores of decoders for each subject, 
             for each channel, at each time point
         tvals (float | tuple):
-            time point to plot or the start and end times (t_start, t_end)
+            time point to plot, or the start and end times (t_start, t_end)
             of the interval to average over
         plot_kwargs (dict): 
             keyword arguments to be passed to mne.viz.plot_topomap
@@ -429,8 +567,26 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
     plt.close(fig)
 
     # --- temporal plots
+    f = CONFIG['PATHS']['RESULTS']['TEMPORAL_SCORES']
+    with open(f, 'rb') as tmp:
+        temporal_results = np.load(tmp)
 
-    pass
+    fig, ax = TemporalScore(temporal_results.mean(1)
+                            )
+    f = CONFIG['PATHS']['PLOT'] / 'temporal_scores.png'
+    fig.savefig(f, **kwargs)
+    logger.debug(f"Wrote temporal scores plot to {f}")
+    plt.close(fig)
+
+    grand_average = mne.read_evokeds(CONFIG['PATHS']['RESULTS']['TEMPORAL_GRAND_AVG'])[0]
+
+    fig, ax = TemporalModelPatterns(grand_average,
+                                    tvals=(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'])
+                                    )
+    f = CONFIG['PATHS']['PLOT'] / 'temporal_pattern.png'
+    fig.savefig(f, **kwargs)
+    logger.debug(f"Wrote temporal pattern topomap plot to {f}")
+    plt.close(fig)
 
     # --- channel plots
 
