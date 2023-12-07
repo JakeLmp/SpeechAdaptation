@@ -10,6 +10,8 @@ And other approaches, like in
 
 Written with [MNE-Python](https://mne.tools/stable/index.html "https://mne.tools/stable/index.html") and [scikit-learn](https://scikit-learn.org/stable/index.html "https://scikit-learn.org/stable/index.html"). Mainly intended for use with EEG data, could relatively easily be adapted to other data.
 
+**NOTE**: at the time of writing (December 2023), packages have not been updated to account for the release of Python 3.12. All development and testing was done in Python 3.11.7 and the accompanying versions of third-party packages such as MNE.
+
 ## MVPA data format requirements
 
 See MNE import documentation for BrainVision files
@@ -31,7 +33,7 @@ Files provided to the tool should contain:
 
 ## Installation
 
-The repository can be downloaded using
+The repository can be downloaded and unpacked as a ```.zip``` file, or using
 
 ```unix
 git clone git@github.com:JakeLmp/SpeechAdaptation.git
@@ -43,7 +45,7 @@ and following the subsequent steps. Required third-party Python packages can be 
 pip install -r requirements.txt
 ```
 
-
+after setting the current working directory to the downloaded repository.
 
 ## How to run
 
