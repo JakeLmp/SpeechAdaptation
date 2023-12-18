@@ -18,36 +18,44 @@ filterwarnings("once", category=ConvergenceWarning)
 import MVPA.utils, MVPA.stat_utils
 CONFIG = MVPA.utils.config_prep()
 
-# neighbour definition for searchlight (64, 32 electrodes only)
+# neighbour definition for searchlight (64 electrodes)
 montage_1020_64 = np.array([
-         ['--','--','--','--','--','--','Nz','--','--','--','--','--','--'],
-        ['--','--','--','--','Fp1','--','Fpz','--','Fp2','--','--','--','--'],
-       ['--','--','AF7','--','AF3','--','AFz','--','AF4','--','AF8','--','--'],
-         ['--','F9','F7','F5','F3','F1','Fz','F2','F4','F6','F8','F10','--'],
+    ['--', '--', '--', '--', '--', '--', 'Nz', '--', '--', '--', '--',  '--','--'],
+    ['--', '--', '--', '--','Fp1', '--','Fpz', '--','Fp2', '--', '--',  '--','--'],
+    ['--', '--','AF7', '--','AF3', '--','AFz', '--','AF4', '--','AF8',  '--','--'],
+    ['--', 'F9', 'F7', 'F5', 'F3', 'F1', 'Fz', 'F2', 'F4', 'F6', 'F8', 'F10','--'],
     ['--','FT9','FT7','FC5','FC3','FC1','FCz','FC2','FC4','FC6','FT8','FT10','--'],
-         ['A1','T9','T7','C5','C3','C1','Cz','C2','C4','C6','T8','T10','A2'],
+    ['A1', 'T9', 'T7', 'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6', 'T8', 'T10','A2'],
     ['--','TP9','TP7','CP5','CP3','CP1','CPz','CP2','CP4','CP6','TP8','TP10','--'],
-         ['--','P9','P7','P5','P3','P1','Pz','P2','P4','P6','P8','P10','--'],
-       ['--','--','PO7','--','PO3','--','POz','--','PO4','--','PO8','--','--'],
-         ['--','--','--','--','O1','--','Oz','--','O2','--','--','--','--'],
-         ['--','--','--','--','--','--','Iz','--','--','--','--','--','--']
+    ['--', 'P9', 'P7', 'P5', 'P3', 'P1', 'Pz', 'P2', 'P4', 'P6', 'P8', 'P10','--'],
+    ['--', '--','PO7', '--','PO3', '--','POz', '--','PO4', '--','PO8',  '--','--'],
+    ['--', '--', '--', '--', 'O1', '--', 'Oz', '--', 'O2', '--', '--',  '--','--'],
+    ['--', '--', '--', '--', '--', '--', 'Iz', '--', '--', '--', '--',  '--','--']
 ])
+# replace '--' with np.nan
 np.place(montage_1020_64, montage_1020_64=='--', np.nan)
 
-montage_1020_32 = np.array([
-      ['--','--','--','--','--','--','--','--','--','--','--','--','--'],
-     ['--','--','--','--','Fp1','--','--','--','Fp2','--','--','--','--'],
-     ['--','--','--','--','AF3','--','--','--','AF4','--','--','--','--'],
-      ['--','--','F7','--','F3','--','Fz','--','F4','--','F8','--','--'],
-    ['--','--','--','FC5','--','FC1','--','FC2','--','FC6','--','--','--'],
-      ['--','--','T7','--','C3','--','Cz','--','C4','--','T8','--','--'],
-    ['--','--','--','CP5','--','CP1','--','CP2','--','CP6','--','--','--'],
-      ['--','--','P7','--','P3','--','Pz','--','P4','--','P8','--','--'],
-     ['--','--','--','--','PO3','--','--','--','PO4','--','--','--','--'],
-      ['--','--','--','--','O1','--','Oz','--','O2','--','--','--','--'],
-      ['--','--','--','--','--','--','--','--','--','--','--','--','--']
-])
-np.place(montage_1020_32, montage_1020_32=='--', np.nan)
+def get_neighbours(idx: int, jdx: int, radius:int=1) -> np.ndarray:
+    """
+    Get neighbour electrodes from montage matrix.
+
+    Args:
+        idx (int): row index
+        jdx (int): column index
+        radius (int, optional): radius of square neighbourhood in indices. Defaults to 1.
+
+    Returns:
+        np.ndarray: submatrix of size (radius*2+1, radius*2+1), 
+            containing electrode at (idx, jdx) and its neighbours
+    """
+    imax, jmax = montage_1020_64.shape
+    
+    nbs = [[montage_1020_64[i][j] if  i >= 0 and i < imax and j >= 0 and j < jmax else np.nan
+                for j in range(jdx-radius, jdx+1+radius)]
+                    for i in range(idx-radius, idx+1+radius)]
+
+    return np.array(nbs)
+
 
 class DecodingManager:
     def __init__(self, data_path=CONFIG['PATHS']['DATA'], 
@@ -583,3 +591,15 @@ class DecodingManager:
             with open(f, 'wb') as tmp:
                 np.save(tmp, p_values)
                 logger.debug(f"Wrote channel p-values to {tmp.name}")
+
+    ################################
+    # ----- SEARCHLIGHT MVPA ----- #
+    ################################
+
+    def _searchlight_decoding(self, subject,
+                              model=CONFIG['DECODING']['MODEL'],
+                              cv_folds=CONFIG['DECODING']['CROSS_VAL_FOLDS'],
+                              scoring=CONFIG['DECODING']['SCORING'],
+                              n_jobs=CONFIG['DECODING']['N_JOBS']
+                              ):
+        pass
