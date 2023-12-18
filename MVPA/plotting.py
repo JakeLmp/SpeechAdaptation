@@ -622,5 +622,36 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
     logger.debug(f"Wrote channel scores topomap plot to {f}")
     plt.close(fig)
 
+    # --- searchlight plots
+
+    f = CONFIG['PATHS']['RESULTS']['SEARCHLIGHT_SCORES']
+    with open(f, 'rb') as tmp:
+        searchlight_results = np.load(tmp)
+    
+    if not spoofed_subject:
+        f = CONFIG['PATHS']['RESULTS']['SEARCHLIGHT_PVALUES']
+        with open(f, 'rb') as tmp:
+            searchlight_pvalues = np.load(tmp)
+    else:
+        searchlight_pvalues = None
+
+    fig, ax = ChannelScoresMatrix(searchlight_results.mean(2),
+                                #   p_values=searchlight_pvalues,
+                                #   p_value_threshold=0.05
+                                  )
+    f = CONFIG['PATHS']['PLOT'] / 'searchlight_scores.png'
+    fig.savefig(f, **kwargs)
+    logger.debug(f"Wrote searchlight scores plot to {f}")
+    plt.close(fig)
+
+    # --- searchlight plots --- just topo
+    fig, ax = ChannelScoresTopomap(searchlight_results.mean(2),
+                                   tvals=(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX']),
+                                   )
+    f = CONFIG['PATHS']['PLOT'] / 'searchlight_scores_topomap.png'
+    fig.savefig(f, **kwargs)
+    logger.debug(f"Wrote searchlight scores topomap plot to {f}")
+    plt.close(fig)
+
 if __name__ == '__main__':
     print('THIS SCRIPT IS NOT MEANT TO BE RUN INDEPENDENTLY')
