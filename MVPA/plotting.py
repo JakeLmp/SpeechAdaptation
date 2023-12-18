@@ -122,7 +122,7 @@ def LineBandPlot(x, y, err_lower, err_upper, plot_kwargs={}):
     fig, ax = plt.subplots(1, 1)
 
     ax.plot(x, y, **kwargs)
-    ax.fill_between(x, err_lower, err_upper, alpha=.25)
+    ax.fill_between(x, err_lower, err_upper, alpha=.25, color=kwargs.get('color'))
     ax.set_xlim(left=x[0], right=x[-1])
     ax.grid(visible=True)
 
