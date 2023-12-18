@@ -41,7 +41,8 @@ def config_prep(config_file: str | pathlib.Path = pathlib.Path("MVPA/PARAMETERS.
     config_['PATHS']['RESULTS']['TEMPORAL_GRAND_AVG'] = config_['PATHS']['SAVE'] / 'temporal_grand_avg-ave.fif'
     config_['PATHS']['RESULTS']['CHANNEL_SCORES'] = config_['PATHS']['SAVE'] / 'channel_scores.npy'
     config_['PATHS']['RESULTS']['CHANNEL_PVALUES'] = config_['PATHS']['SAVE'] / 'channel_pvalues.npy'
-    
+    config_['PATHS']['RESULTS']['SEARCHLIGHT_SCORES'] = config_['PATHS']['SAVE'] / 'searchlight_scores.npy'
+    config_['PATHS']['RESULTS']['SEARCHLIGHT_PVALUES'] = config_['PATHS']['SAVE'] / 'searchlight_pvalues.npy'
     
     return config_
 
@@ -119,6 +120,10 @@ class SubjectFiles:
     @property
     def channel_scores(self) -> pathlib.Path:
         return self.tmp / (self.stem + '-channel_scores.npy')
+    
+    @property
+    def searchlight_scores(self) -> pathlib.Path:
+        return self.tmp / (self.stem + '-searchlight_scores.npy')
     
     def png(self, plot_name: str) -> pathlib.Path:
         return self.plot / (self.stem + '-' + plot_name + '.png')

@@ -30,6 +30,7 @@ See the package configuration file 'PARAMETERS.toml' for parameter specification
     parser.add_argument('--skip-gat', action='store_true', help="Skip Generalised Across Time calculations.")
     parser.add_argument('--skip-temporal', action='store_true', help="Skip Temporal Decoding calculations.")
     parser.add_argument('--skip-channel', action='store_true', help="Skip Channel Decoding calculations.")
+    parser.add_argument('--skip-searchlight', action='store_true', help="Skip Searchlight Decoding calculations.")
 
     args = parser.parse_args()
 
@@ -49,6 +50,8 @@ See the package configuration file 'PARAMETERS.toml' for parameter specification
             manager.run_all_temporal_decoding()
         if not args.skip_channel:
             manager.run_all_channel_decoding()
+        if not args.skip_searchlight:
+            manager.run_all_searchlight_decoding()
     
     # at this point, all calculation work should be finished
     # and we can generate plots using the results

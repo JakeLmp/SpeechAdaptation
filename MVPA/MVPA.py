@@ -35,25 +35,32 @@ montage_1020_64 = np.array([
 # replace '--' with np.nan
 np.place(montage_1020_64, montage_1020_64=='--', np.nan)
 
-def get_neighbours(idx: int, jdx: int, radius:int=1) -> np.ndarray:
+def get_neighbours(ch:str, radius:int=1) -> np.ndarray:
     """
     Get neighbour electrodes from montage matrix.
 
     Args:
-        idx (int): row index
-        jdx (int): column index
-        radius (int, optional): radius of square neighbourhood in indices. Defaults to 1.
+        ch (str): channel name
+        radius (int, optional): radius of square neighbourhood in indices. 
+            Defaults to 1.
 
     Returns:
         np.ndarray: submatrix of size (radius*2+1, radius*2+1), 
             containing electrode at (idx, jdx) and its neighbours
     """
+    # find channel in montage
+    ch_idx = np.where(montage_1020_64 == ch)
+    idx, jdx = ch_idx[0][0], ch_idx[1][0]
+
+    # max indices
     imax, jmax = montage_1020_64.shape
     
+    # get neighbours, while taking care of index boundaries
     nbs = [[montage_1020_64[i][j] if  i >= 0 and i < imax and j >= 0 and j < jmax else np.nan
                 for j in range(jdx-radius, jdx+1+radius)]
                     for i in range(idx-radius, idx+1+radius)]
 
+    # return numpy stuff
     return np.array(nbs)
 
 
@@ -665,11 +672,11 @@ class DecodingManager:
             while err_count < 10:
                 try:
                     scores[i] = mne.decoding.cross_val_multiscore(estimator,
-                                                                data_matrix,
-                                                                labels,
-                                                                cv=cv_folds,
-                                                                n_jobs=n_jobs
-                                                                )
+                                                                  data_matrix,
+                                                                  labels,
+                                                                  cv=cv_folds,
+                                                                  n_jobs=n_jobs
+                                                                  )
                 except IndexError:
                     logging.debug("Caught MNE error, retrying")
                     continue
@@ -756,4 +763,145 @@ class DecodingManager:
                               scoring=CONFIG['DECODING']['SCORING'],
                               n_jobs=CONFIG['DECODING']['N_JOBS']
                               ):
-        pass
+        """
+        Train a model on a searchlight around each channel, at each time point. 
+        Perform decoding with data from `subject`. Save resulting model scores 
+        at location indicated by `subject`. 
+
+        Args:
+            subject (MVPA.utils.SubjectFiles): SubjectFiles object containing location of data
+            model (sklearn.linear_model | sklearn.svc, optional): sklearn classifier object to be used in modelling. 
+                Defaults to CONFIG['DECODING']['MODEL'].
+            cv_folds (int, optional): no. of cross validation folds to use. 
+                Defaults to CONFIG['DECODING']['CROSS_VAL_FOLDS'].
+            scoring (str, optional): sklearn scoring method to use. 
+                Defaults to CONFIG['DECODING']['SCORING'].
+            n_jobs (int, optional): max. no. of parallel jobs to use. Set -1 to use number of 
+                CPU cores. Defaults to CONFIG['DECODING']['N_JOBS'].
+        """
+
+        logger.debug(f"Loading file {subject.epoch}")
+        data_epochs = mne.read_epochs(subject.epoch)
+
+        # produce labels based on user-indicated condition/marker mapping
+        labels = np.empty(shape=(len(data_epochs.events[:,-1])), dtype=object)
+        for cond, markers in CONFIG['CONDITION_STIMULI'].items():
+            for marker in markers:
+                labels[data_epochs.events[:,-1] == marker] = cond
+
+        # labels should be encoded to facilitate all models
+        labels = sklearn.preprocessing.LabelEncoder().fit_transform(labels)
+
+        # predefined scores array, shape (n_channels, k_folds, n_times)
+        scores = np.empty(shape=(len(data_epochs.pick('data').ch_names), cv_folds, len(data_epochs.times)))
+
+        logger.info("Performing fitting")
+
+        # we're doing this for every channel (yes, it's somewhat hacky)
+        for i, channel in tqdm(enumerate(data_epochs.pick('data').ch_names)):
+            # get neighbours (we don't need topo info here, so we flatten)
+            neighbours = get_neighbours(channel,
+                                        radius=1).flatten()
+            
+            # we can only use channels that are present in the data
+            picks = [ch for ch in neighbours if ch in data_epochs.pick('data').ch_names]
+            
+            # TODO: 1 event seems to get dropped here
+            data_matrix = data_epochs.get_data(picks=picks)
+
+            pipeline = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(),
+                                                      mne.decoding.LinearModel(self._get_model_object(model))
+                                                      )
+
+            estimator = mne.decoding.SlidingEstimator(pipeline,
+                                                      n_jobs=n_jobs,
+                                                      scoring=scoring,
+                                                      verbose=logging.ERROR
+                                                      )
+
+            # bug in mne/fixes.py (in BaseEstimator.get_params) causes this to crash unpredictably
+            # catch IndexErrors, and retry (up to a max number subsequent retries)
+            err_count = 0
+            while err_count < 10:
+                try:
+                    scores[i] = mne.decoding.cross_val_multiscore(estimator,
+                                                                  data_matrix,
+                                                                  labels,
+                                                                  cv=cv_folds,
+                                                                  n_jobs=n_jobs
+                                                                  )
+                except IndexError:
+                    logging.debug("Caught MNE error, retrying")
+                    continue
+                break
+            
+        # store results in temp folder, to be imported later
+        with open(subject.searchlight_scores, 'wb') as tmp:
+            np.save(tmp, scores)
+            logger.debug(f"Wrote cross validation scores to {tmp.name}")
+
+    def _aggregate_searchlight_scores(self,):
+        """
+        Aggregate scores generated by `self._searchlight_decoding`, and save in numpy-style 
+        file at location `CONFIG['PATHS']['RESULTS']['SEARCHLIGHT_SCORES']`.
+        """
+        # get first subject's scores as template for array size
+        with open(self.subjects[0].searchlight_scores, 'rb') as tmp:
+            scores = np.load(tmp)
+
+        # insert dimension for multiple subjects
+        scores.resize((len(self.subjects), *scores.shape))
+
+        # read remaining subject scores
+        for i, subject in enumerate(self.subjects[1:], start=1):
+            with open(subject.searchlight_scores, 'rb') as tmp:
+                scores[i] = np.load(tmp)
+
+        f = CONFIG['PATHS']['RESULTS']['SEARCHLIGHT_SCORES']
+        with open(f, 'wb') as tmp:
+            np.save(tmp, scores)
+            logger.debug(f"Wrote aggregated searchlight scores to {tmp.name}")
+
+    def run_all_searchlight_decoding(self, rm_existing=True):
+        """
+        Run decoding on all subjects, training a model for each searchlight at each time point. 
+        Afterwards, aggregate scores and calculate p-values, save at locations 
+        `CONFIG['PATHS']['RESULTS']['SEARCHLIGHT_SCORES']` and 
+        `CONFIG['PATHS']['RESULTS']['SEARCHLIGHT_PVALUES']`, respectively.
+
+        Args:
+            rm_existing (bool, optional): Remove existing result files. 
+                Defaults to True.
+        """
+        # remove existing -searchlight_* files from tmp directory
+        if rm_existing:
+            # remove existing scoring files from directory
+            for f_ in CONFIG['PATHS']['TMP'].glob('*-searchlight_scores.npy'):# FOR SAFETY, ONLY TOP-LEVEL FILE GLOB
+                if f_.is_file(): f_.unlink()
+                else: raise Exception(f"Please do not alter contents of {CONFIG['PATHS']['TMP']}")
+
+        # run searchlight decoding for each subject individually
+        for i, subject in enumerate(self.subjects, start=1):
+            logger.info(f"Fitting searchlight decoding for subject {i}/{len(self.subjects)}")
+            self._searchlight_decoding(subject)
+        
+        # aggregate and save results
+        logger.debug("Consolidating results")
+        self._aggregate_searchlight_scores()
+
+        if len(self.subjects) > 1:
+            # p-value calculation with FDR correction
+            logger.info("Calculating p-values")
+
+            with open(CONFIG['PATHS']['RESULTS']['SEARCHLIGHT_SCORES'], 'rb') as f:
+                scores = np.load(f)
+        
+            p_values = MVPA.stat_utils.get_p_scores(scores.mean(2), # use average of folds
+                                                    chance= 1/len(CONFIG['CONDITION_STIMULI']), # 1/no_of_conditions
+                                                    tfce=False) # use FDR instead of TFCE
+
+            # store p-values
+            f = CONFIG['PATHS']['RESULTS']['SEARCHLIGHT_PVALUES']
+            with open(f, 'wb') as tmp:
+                np.save(tmp, p_values)
+                logger.debug(f"Wrote searchlight p-values to {tmp.name}")
