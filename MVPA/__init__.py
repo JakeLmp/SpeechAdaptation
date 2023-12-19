@@ -16,7 +16,8 @@ def main():
     parser = argparse.ArgumentParser(prog=__name__,
                                      description="""
 Package for MVPA (decoding) for EEG data. Includes Generalisation Across Time, Temporal Decoding (all channels are features), 
-and Channel Decoding (searchlight decoding with single-channel features). Generates plots using calculation outcomes.
+Channel Decoding (searchlight decoding with single-channel features) and Searchlight Decoding (searchlight with primitive neighbour definition). 
+Generates plots using calculation outcomes.
 
 See the package configuration file 'PARAMETERS.toml' for parameter specification.
 
