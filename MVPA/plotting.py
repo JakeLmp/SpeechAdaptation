@@ -377,7 +377,7 @@ def ChannelScoresMatrix(scores_matrix,
 
     # reordering matrix according to plotting order
     scores_matrix = scores_matrix[:, list(correct_order.values()), ...]
-    if p_values is not None:
+    if isinstance(p_values, np.ndarray):
         p_values = p_values[list(correct_order.values()), ...]
 
     # we need the mean over subjects
@@ -419,16 +419,16 @@ def ChannelScoresMatrix(scores_matrix,
     # we draw contour lines around significant areas (if p_values is given)
     if isinstance(p_values, np.ndarray):
         # matplotlib requires weird coordinate formats, this complies to that.
-        x = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], data.shape[0])
-        y = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], data.shape[1])
+        x = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], data.shape[1])
+        y = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], data.shape[0])
         x, y = np.meshgrid(x, y)
-        
-        # ax.contour(x, y, mask, 
-        #            levels=[0.5],
-        #            linewidths=[1],
-        #            colors=['k'],
-        #            corner_mask=False,
-        #           )
+
+        ax.contour(x, y, np.flip(mask, axis=0), # mask needs to be flipped because origin='lower' is ignored here
+                   levels=[0.5],
+                   linewidths=[1],
+                   colors=['k'],
+                   corner_mask=False,
+                  )
 
     # y-axis tick positions
     pos = np.linspace(CONFIG['MNE']['T_MIN'], CONFIG['MNE']['T_MAX'], len(correct_order))
