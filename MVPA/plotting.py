@@ -602,8 +602,8 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
         channel_pvalues = None
 
     fig, ax = ChannelScoresMatrix(channel_results.mean(2),
-                                #   p_values=channel_pvalues,
-                                #   p_value_threshold=0.05
+                                  p_values=channel_pvalues,
+                                  p_value_threshold=0.05
                                   )
     f = CONFIG['PATHS']['PLOT'] / 'channel_scores.png'
     fig.savefig(f, **kwargs)
@@ -636,8 +636,8 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
         searchlight_pvalues = None
 
     fig, ax = ChannelScoresMatrix(searchlight_results.mean(2),
-                                #   p_values=searchlight_pvalues,
-                                #   p_value_threshold=0.05
+                                  p_values=searchlight_pvalues,
+                                  p_value_threshold=0.05
                                   )
     f = CONFIG['PATHS']['PLOT'] / 'searchlight_scores.png'
     fig.savefig(f, **kwargs)
