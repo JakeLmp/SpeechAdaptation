@@ -571,7 +571,13 @@ def generate_all_plots(spoofed_subject=False, save_kwargs={}):
     with open(f, 'rb') as tmp:
         temporal_results = np.load(tmp)
 
-    fig, ax = TemporalScore(temporal_results.mean(1)
+    f = CONFIG['PATHS']['RESULTS']['TEMPORAL_PVALUES']
+    with open(f, 'rb') as tmp:
+        temporal_pvalues = np.load(tmp)
+
+    fig, ax = TemporalScore(temporal_results.mean(1),
+                            p_values=temporal_pvalues,
+                            p_value_threshold=[0.05,0.01]
                             )
     f = CONFIG['PATHS']['PLOT'] / 'temporal_scores.png'
     fig.savefig(f, **kwargs)

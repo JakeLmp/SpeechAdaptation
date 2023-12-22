@@ -608,6 +608,23 @@ class DecodingManager:
         self._aggregate_temporal_scores()
         self._temporal_grand_avg()
 
+        if len(self.subjects) > 1:
+            # p-value calculation with FDR correction
+            logger.info("Calculating p-values")
+
+            with open(CONFIG['PATHS']['RESULTS']['TEMPORAL_SCORES'], 'rb') as f:
+                scores = np.load(f)
+        
+            p_values = MVPA.stat_utils.get_p_scores(scores.mean(1), # use average of folds
+                                                    chance= 1/len(CONFIG['CONDITION_STIMULI']), # 1/no_of_conditions
+                                                    tfce=False) # use FDR instead of TFCE
+
+            # store p-values
+            f = CONFIG['PATHS']['RESULTS']['TEMPORAL_PVALUES']
+            with open(f, 'wb') as tmp:
+                np.save(tmp, p_values)
+                logger.debug(f"Wrote temporal p-values to {tmp.name}")
+
     ############################
     # ----- CHANNEL MVPA ----- #
     ############################
