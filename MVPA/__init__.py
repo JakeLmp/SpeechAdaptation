@@ -1,8 +1,6 @@
 import logging, sys
 logging.basicConfig(level=logging.WARNING,
                     stream=sys.stdout)
-logging.basicConfig(level=logging.INFO,
-                    stream=sys.stdout)
 logger = logging.getLogger('MVPA')
 
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
@@ -37,6 +35,8 @@ See the package configuration file 'PARAMETERS.toml' for parameter specification
 
     if args.verbose:
         logger.setLevel(logging.INFO)
+    else:
+        logger.setLevel(logging.WARNING)
 
     manager = MVPA.DecodingManager()
 
